@@ -213,6 +213,45 @@ class MetricsToLogRecordMapperTest {
   }
 
   @Test
+  void gatewayLatencyAttributesAreMapped() {
+    var record = mapper.map(OtelTestSupport.metrics(200));
+    assertThat(
+      record.attributes().get(AttributeKey.longKey("gateway.proxy_latency_ms"))
+    ).isNotNull();
+    assertThat(
+      record.attributes().get(AttributeKey.longKey("gateway.api_latency_ms"))
+    ).isNotNull();
+  }
+
+  @Test
+  void errorMessageAttributeIsMappedWhenPresent() {
+    var m = OtelTestSupport.metrics(500);
+    m.setErrorMessage("upstream timeout");
+    var record = mapper.map(m);
+    assertThat(
+      record.attributes().get(AttributeKey.stringKey("error.message"))
+    ).isEqualTo("upstream timeout");
+  }
+
+  @Test
+  void errorMessageAttributeOmittedWhenNull() {
+    var record = mapper.map(OtelTestSupport.metrics(200));
+    assertThat(
+      record.attributes().get(AttributeKey.stringKey("error.message"))
+    ).isNull();
+  }
+
+  @Test
+  void apiTypeAttributeIsMappedWhenPresent() {
+    var m = OtelTestSupport.metrics(200);
+    m.setApiType("PROXY");
+    var record = mapper.map(m);
+    assertThat(
+      record.attributes().get(AttributeKey.stringKey("api.type"))
+    ).isEqualTo("PROXY");
+  }
+
+  @Test
   void zeroContentLengthsOmitted() {
     var record = mapper.map(OtelTestSupport.metricsWithZeroContentLengths(200));
     assertThat(

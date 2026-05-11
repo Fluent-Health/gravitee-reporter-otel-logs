@@ -12,10 +12,6 @@
       "type": "string",
       "default": "https://logging.googleapis.com"
     },
-    "insecure": {
-      "type": "boolean",
-      "default": false
-    },
     "correlationHeader": {
       "type": "string",
       "default": "X-Request-ID"

@@ -109,7 +109,8 @@ endpoint.response_time_ms
 ```
 api.name, api.id
 message.count, message.error_count
-message.bytes_in, message.bytes_out
+message.content_length   ← Gravitee v4 MessageMetrics exposes a single contentLength field;
+                           no separate bytes_in/bytes_out breakdown available in the API
 ```
 
 ### Compliance constraints
@@ -132,8 +133,7 @@ Low-cardinality attributes (`api.name`, `http.method`, `severity`) become Loki s
 reporters:
   otel-logs:
     enabled: true
-    endpoint: "https://logging.googleapis.com"   # OTLP gRPC target
-    insecure: false                               # skip TLS — local/test only
+    endpoint: "https://logging.googleapis.com"   # OTLP gRPC target; use http:// scheme for plaintext (local/test)
     correlationHeader: "X-Request-ID"            # header to extract trace_id from
     batchSize: 512
     scheduledDelayMs: 5000
@@ -148,8 +148,7 @@ reporters:
 | Property | Default | Description |
 |---|---|---|
 | `enabled` | `true` | Activates the reporter |
-| `endpoint` | required | OTLP gRPC endpoint URL |
-| `insecure` | `false` | Disable TLS (test/local only) |
+| `endpoint` | required | OTLP gRPC endpoint URL. Use `http://` scheme to disable TLS (test/local only) — the OTLP exporter selects plaintext automatically based on scheme |
 | `correlationHeader` | `"X-Request-ID"` | Request header whose value is extracted from `Metrics.request().headers()` and set as OTel `traceId`; falls back to W3C `traceparent` if absent |
 | `batchSize` | `512` | `BatchLogRecordProcessor` max batch size |
 | `scheduledDelayMs` | `5000` | Flush interval in milliseconds |

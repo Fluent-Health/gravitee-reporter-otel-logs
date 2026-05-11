@@ -326,20 +326,19 @@ class OtelLogsReporterIT {
       );
   }
 
-  // ── Scenario 5: reportLogs=false → Log event not emitted ──────────────────
+  // ── Scenario 5: reportLogs=false → reporter rejects Log events ───────────
 
   @Test
-  void logEventIsNotEmittedWhenReportLogsDisabled() {
+  void canHandleReturnsFalseForLogWhenReportLogsDisabled() {
     // reportLogs=false is set in OtelTestSupport.config().
-    // Verify that the reporter declares it cannot handle Log reportables.
-    // Gravitee gateway calls canHandle() before report(), so if this returns false,
-    // report() will never be invoked for Log events.
+    // Gravitee gateway calls canHandle() before report(); if this returns false,
+    // the gateway never invokes report() for Log events.
+    // The full negative emission path (report() skipping writer) is covered
+    // in OtelLogsReporterTest (unit level with Mockito verification).
     var l = OtelTestSupport.log(200);
     assertThat(reporter.canHandle(l))
       .as("reporter must reject Log events when reportLogs=false")
       .isFalse();
-    // The full negative emission path (report() not calling writer) is validated
-    // in OtelLogsReporterTest at the unit level.
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────

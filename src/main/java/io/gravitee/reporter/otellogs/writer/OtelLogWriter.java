@@ -81,6 +81,14 @@ public class OtelLogWriter implements AutoCloseable {
           record.sentrySpanId()
         );
       }
+      // traceId present but no spanId (e.g. correlation header only) — store as attribute
+      // so the trace identifier is preserved and queryable in the log backend.
+      if (record.traceId() != null && record.spanId() == null) {
+        attrsBuilder.put(
+          AttributeKey.stringKey("http.request.trace_id"),
+          record.traceId()
+        );
+      }
 
       var builder = otelLogger
         .logRecordBuilder()
@@ -97,14 +105,6 @@ public class OtelLogWriter implements AutoCloseable {
           TraceState.getDefault()
         );
         builder.setContext(Context.root().with(Span.wrap(spanCtx)));
-      } else if (record.traceId() != null) {
-        // traceId present but no spanId (e.g. correlation header only) — store as attribute
-        // so the trace identifier is preserved and queryable in the log backend.
-        attrsBuilder.put(
-          AttributeKey.stringKey("http.request.trace_id"),
-          record.traceId()
-        );
-        builder.setAllAttributes(attrsBuilder.build());
       }
 
       builder.emit();

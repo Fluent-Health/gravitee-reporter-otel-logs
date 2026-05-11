@@ -40,7 +40,6 @@ public final class OtelTestSupport {
     var cfg = new OtelLogsReporterConfiguration();
     cfg.setEnabled(true);
     cfg.setEndpoint("http://localhost:4317");
-    cfg.setInsecure(true);
     cfg.setCorrelationHeader("X-Request-ID");
     cfg.setBatchSize(512);
     cfg.setScheduledDelayMs(5000);

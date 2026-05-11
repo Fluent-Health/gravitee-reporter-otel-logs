@@ -116,6 +116,10 @@ public class MetricsToLogRecordMapper {
       AttributeKey.stringKey("api.id"),
       m.getApiId()
     );
+    if (m.getApiType() != null) b.put(
+      AttributeKey.stringKey("api.type"),
+      m.getApiType()
+    );
     if (m.getHttpMethod() != null) b.put(
       AttributeKey.stringKey("http.method"),
       m.getHttpMethod().name()
@@ -124,6 +128,14 @@ public class MetricsToLogRecordMapper {
     b.put(
       AttributeKey.longKey("http.latency_ms"),
       m.getGatewayResponseTimeMs()
+    );
+    b.put(
+      AttributeKey.longKey("gateway.proxy_latency_ms"),
+      m.getGatewayLatencyMs()
+    );
+    b.put(
+      AttributeKey.longKey("gateway.api_latency_ms"),
+      m.getEndpointResponseTimeMs()
     );
     if (m.getEndpoint() != null) {
       b.put(
@@ -157,6 +169,9 @@ public class MetricsToLogRecordMapper {
         AttributeKey.stringKey("context.subscription"),
         m.getSubscriptionId()
       );
+    }
+    if (m.getErrorMessage() != null) {
+      b.put(AttributeKey.stringKey("error.message"), m.getErrorMessage());
     }
     return b.build();
   }

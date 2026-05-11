@@ -25,9 +25,6 @@ public class OtelLogsReporterConfiguration {
   @Value("${reporters.otel-logs.endpoint:https://logging.googleapis.com}")
   private String endpoint;
 
-  @Value("${reporters.otel-logs.insecure:false}")
-  private boolean insecure;
-
   @Value("${reporters.otel-logs.correlationHeader:X-Request-ID}")
   private String correlationHeader;
 
@@ -52,10 +49,6 @@ public class OtelLogsReporterConfiguration {
 
   public String getEndpoint() {
     return endpoint;
-  }
-
-  public boolean isInsecure() {
-    return insecure;
   }
 
   public String getCorrelationHeader() {
@@ -89,10 +82,6 @@ public class OtelLogsReporterConfiguration {
 
   public void setEndpoint(String endpoint) {
     this.endpoint = endpoint;
-  }
-
-  public void setInsecure(boolean insecure) {
-    this.insecure = insecure;
   }
 
   public void setCorrelationHeader(String correlationHeader) {
