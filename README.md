@@ -26,16 +26,39 @@ mvn verify
 
 The `.tool-versions` file pins Java 21 (Temurin) and Maven 3.9. `mvn verify` compiles, runs the unit test suite, and produces the plugin ZIP at `target/gravitee-reporter-otel-logs-*.zip`.
 
-To load the plugin into a local Gravitee gateway, copy the ZIP to the gateway's `plugins-ext/` directory and add one of the following blocks to `gravitee.yml`:
+To load the plugin into a local Gravitee gateway, copy the ZIP to the gateway's `plugins-ext/` directory and configure it in `gravitee.yml`. See [Configuration](#configuration) below for the full property reference and examples.
 
-**OTLP mode** (via OTel Collector):
+## Configuration
+
+Add a `reporters.otel-logs` block to `gravitee.yml`. The `exporter` property selects the mode; all other properties are shared unless noted.
+
+### Property reference
+
+| Property | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | boolean | `true` | Enables or disables the reporter entirely. |
+| `exporter` | string | `otlp` | Export mode: `otlp` (via OTel Collector) or `gcloud` (direct to Cloud Logging REST API). |
+| `endpoint` | string | `http://localhost:4317` | OTLP gRPC endpoint. Used only when `exporter: otlp`. |
+| `correlationHeader` | string | `X-Request-ID` | Request header used as the trace ID when no W3C `traceparent` is present. |
+| `batchSize` | integer | `512` | Maximum number of log records per export batch. |
+| `scheduledDelayMs` | integer | `5000` | Milliseconds between batch export attempts. |
+| `reportHealthChecks` | boolean | `true` | Emit records for `EndpointStatus` (health check) events. |
+| `reportLogs` | boolean | `false` | Emit records for `Log` (full request/response metadata) events. Disable to avoid verbose output. |
+| `reportMessageMetrics` | boolean | `true` | Emit records for `MessageMetrics` (async/event-driven API) events. |
+| `gcloud.projectId` | string | — | GCP project ID. **Required** when `exporter: gcloud`. |
+| `gcloud.logName` | string | `gravitee-api-gateway` | Cloud Logging log name (under `projects/{projectId}/logs/{logName}`). Used only when `exporter: gcloud`. |
+| `gcloud.credentialsFile` | string | — | Path to a service-account key JSON file. Omit to use Application Default Credentials (recommended on GKE via Workload Identity). Used only when `exporter: gcloud`. |
+
+### OTLP mode (via OTel Collector)
+
+Routes records through an OpenTelemetry Collector that translates them to Cloud Logging. Use this if you already operate a collector fleet, need multi-destination fanout, or want the Collector to handle credential management.
 
 ```yaml
 reporters:
   otel-logs:
     enabled: true
     exporter: otlp
-    endpoint: "http://localhost:4317"
+    endpoint: "http://otel-collector.YOUR_NAMESPACE.svc.cluster.local:4317"
     correlationHeader: "X-Request-ID"
     batchSize: 512
     scheduledDelayMs: 5000
@@ -44,7 +67,11 @@ reporters:
     reportMessageMetrics: true
 ```
 
-**GCloud mode** (direct to Cloud Logging, no Collector needed):
+The `endpoint` must point to an OTel Collector that accepts OTLP gRPC. Use `http://` for plain-text in-cluster traffic. See [OTel Collector configuration](#2-otel-collector-configuration) below for a ready-to-use collector config.
+
+### GCloud mode (direct to Cloud Logging)
+
+Writes directly to Cloud Logging via the REST API. No OTel Collector is needed. Authentication uses Application Default Credentials by default — on GKE this means Workload Identity; no credentials file required.
 
 ```yaml
 reporters:
@@ -60,10 +87,18 @@ reporters:
     gcloud:
       projectId: "your-gcp-project-id"
       logName: "gravitee-api-gateway"
-      # credentialsFile: "/path/to/sa-key.json"  # omit to use ADC
+      # credentialsFile: "/path/to/sa-key.json"  # omit on GKE with Workload Identity
 ```
 
-See [GCP Configuration](#gcp-configuration) below for IAM setup and querying guidance.
+To use a service-account key file instead of ADC (e.g. on a non-GKE VM):
+
+```yaml
+    gcloud:
+      projectId: "your-gcp-project-id"
+      credentialsFile: "/etc/gravitee/gcp-sa-key.json"
+```
+
+See [GCP Configuration](#gcp-configuration) for IAM setup, querying, and the full OTel Collector config for OTLP mode.
 
 ## Testing
 
@@ -101,13 +136,6 @@ Releases follow **semver tagging**. To publish a new release:
 ## Additional Info
 
 ### GCP Configuration
-
-Two modes are available for writing to Cloud Logging:
-
-- **GCloud mode** (`exporter: gcloud`) writes directly from the plugin via the Cloud Logging REST API. No OTel Collector is needed. This is the simpler option for GKE deployments with Workload Identity.
-- **OTLP mode** (`exporter: otlp`) sends records to an **OpenTelemetry Collector** (`otelcol-contrib`), which forwards them to Cloud Logging. Use this if you already operate a collector fleet or need multi-destination fanout.
-
-Cloud Logging does not expose a native OTLP gRPC endpoint — the OTLP path requires the collector intermediary.
 
 #### 1. IAM — grant write access
 
@@ -182,30 +210,10 @@ The `googlecloud` exporter picks up Application Default Credentials automaticall
 
 #### 3. Gravitee gateway configuration
 
-**GCloud mode** (no Collector needed):
+See the [Configuration](#configuration) section above for the full `gravitee.yml` examples. The minimal additions for GCP:
 
-```yaml
-reporters:
-  otel-logs:
-    enabled: true
-    exporter: gcloud
-    gcloud:
-      projectId: "YOUR_PROJECT_ID"
-      logName: "gravitee-api-gateway"
-      # credentialsFile: "/path/to/sa-key.json"  # omit on GKE with Workload Identity
-```
-
-**OTLP mode** (via OTel Collector):
-
-```yaml
-reporters:
-  otel-logs:
-    enabled: true
-    exporter: otlp
-    endpoint: "http://otel-collector.YOUR_NAMESPACE.svc.cluster.local:4317"
-```
-
-Use the `http://` scheme for plain-text in-cluster traffic in OTLP mode.
+- **GCloud mode**: set `exporter: gcloud` and `gcloud.projectId: YOUR_PROJECT_ID`. No endpoint needed.
+- **OTLP mode**: set `exporter: otlp` and `endpoint: http://otel-collector.YOUR_NAMESPACE.svc.cluster.local:4317`.
 
 #### 4. Querying logs in Cloud Logging
 
