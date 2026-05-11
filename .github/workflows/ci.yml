@@ -11,7 +11,7 @@ jobs:
 
     permissions:
       contents: read
-      id-token: write   # required for GCP Workload Identity Federation
+      id-token: write # required for GCP Workload Identity Federation
 
     steps:
       - uses: actions/checkout@v4
@@ -30,8 +30,13 @@ jobs:
       - name: Unit tests
         run: mvn test -q
 
-      - name: Integration tests
+      - name: Integration tests (TestContainers — OTel Collector + Loki)
         run: mvn verify -Pintegration-test -q
+
+      - name: Integration tests (Google Cloud Logging — live write + readback)
+        run: mvn verify -Pgcloud-integration-test -q
+        env:
+          GOOGLE_CLOUD_PROJECT: ${{ vars.GCP_PROJECT_ID }}
 
       - name: Build plugin ZIP
         run: mvn package -DskipTests -q
