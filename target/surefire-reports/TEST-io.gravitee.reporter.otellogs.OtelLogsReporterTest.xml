@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report.xsd" version="3.0.2" name="io.gravitee.reporter.otellogs.mapper.MetricsToLogRecordMapperTest" time="0.056" tests="23" errors="0" skipped="0" failures="0">
+<testsuite xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report.xsd" version="3.0.2" name="io.gravitee.reporter.otellogs.OtelLogsReporterTest" time="1.183" tests="16" errors="0" skipped="0" failures="0">
   <properties>
     <property name="java.specification.version" value="21"/>
     <property name="sun.jnu.encoding" value="UTF-8"/>
@@ -54,27 +54,27 @@
     <property name="sun.io.unicode.encoding" value="UnicodeLittle"/>
     <property name="java.class.version" value="65.0"/>
   </properties>
-  <testcase name="contextApplicationPlanAndSubscriptionAreMapped" classname="io.gravitee.reporter.otellogs.mapper.MetricsToLogRecordMapperTest" time="0.006"/>
-  <testcase name="noHeadersMeansNullTraceId" classname="io.gravitee.reporter.otellogs.mapper.MetricsToLogRecordMapperTest" time="0.002"/>
-  <testcase name="status200HasSeverityInfo" classname="io.gravitee.reporter.otellogs.mapper.MetricsToLogRecordMapperTest" time="0.002"/>
-  <testcase name="gatewayLatencyAttributesAreMapped" classname="io.gravitee.reporter.otellogs.mapper.MetricsToLogRecordMapperTest" time="0.002"/>
-  <testcase name="errorMessageAttributeOmittedWhenNull" classname="io.gravitee.reporter.otellogs.mapper.MetricsToLogRecordMapperTest" time="0.001"/>
-  <testcase name="status500HasSeverityError" classname="io.gravitee.reporter.otellogs.mapper.MetricsToLogRecordMapperTest" time="0.001"/>
-  <testcase name="apiTypeAttributeIsMappedWhenPresent" classname="io.gravitee.reporter.otellogs.mapper.MetricsToLogRecordMapperTest" time="0.001"/>
-  <testcase name="contentLengthsAreMapped" classname="io.gravitee.reporter.otellogs.mapper.MetricsToLogRecordMapperTest" time="0.002"/>
-  <testcase name="httpAttributesAreMapped" classname="io.gravitee.reporter.otellogs.mapper.MetricsToLogRecordMapperTest" time="0.002"/>
-  <testcase name="nullUriProducesDashInBody" classname="io.gravitee.reporter.otellogs.mapper.MetricsToLogRecordMapperTest" time="0.002"/>
-  <testcase name="errorMessageAttributeIsMappedWhenPresent" classname="io.gravitee.reporter.otellogs.mapper.MetricsToLogRecordMapperTest" time="0.001"/>
-  <testcase name="upstreamEndpointPathIsAlsoSanitized" classname="io.gravitee.reporter.otellogs.mapper.MetricsToLogRecordMapperTest" time="0.002"/>
-  <testcase name="status400HasSeverityWarn" classname="io.gravitee.reporter.otellogs.mapper.MetricsToLogRecordMapperTest" time="0.001"/>
-  <testcase name="sentryTraceHeaderExtractsSentryTraceIdAndSpanId" classname="io.gravitee.reporter.otellogs.mapper.MetricsToLogRecordMapperTest" time="0.003"/>
-  <testcase name="bodyContainsMethodSanitizedPathAndStatus" classname="io.gravitee.reporter.otellogs.mapper.MetricsToLogRecordMapperTest" time="0.002"/>
-  <testcase name="metricsWithNoEmbeddedLog_traceFallsBackToNull" classname="io.gravitee.reporter.otellogs.mapper.MetricsToLogRecordMapperTest" time="0.001"/>
-  <testcase name="traceparentHeaderFallsBackWhenCorrelationHeaderAbsent" classname="io.gravitee.reporter.otellogs.mapper.MetricsToLogRecordMapperTest" time="0.002"/>
-  <testcase name="correlationHeaderAloneProducesNullSpanId" classname="io.gravitee.reporter.otellogs.mapper.MetricsToLogRecordMapperTest" time="0.002"/>
-  <testcase name="timestampIsConvertedToNanoseconds" classname="io.gravitee.reporter.otellogs.mapper.MetricsToLogRecordMapperTest" time="0.001"/>
-  <testcase name="nullApiNameIsOmittedFromAttributes" classname="io.gravitee.reporter.otellogs.mapper.MetricsToLogRecordMapperTest" time="0.001"/>
-  <testcase name="apiAttributesAreMapped" classname="io.gravitee.reporter.otellogs.mapper.MetricsToLogRecordMapperTest" time="0.001"/>
-  <testcase name="xRequestIdHeaderBecomesTraceId" classname="io.gravitee.reporter.otellogs.mapper.MetricsToLogRecordMapperTest" time="0.001"/>
-  <testcase name="zeroContentLengthsOmitted" classname="io.gravitee.reporter.otellogs.mapper.MetricsToLogRecordMapperTest" time="0.001"/>
+  <testcase name="messageMetricsNotHandledWhenDisabled" classname="io.gravitee.reporter.otellogs.OtelLogsReporterTest" time="0.99">
+    <system-err><![CDATA[Mockito is currently self-attaching to enable the inline-mock-maker. This will no longer work in future releases of the JDK. Please add Mockito as an agent to your build what is described in Mockito's documentation: https://javadoc.io/doc/org.mockito/mockito-core/latest/org/mockito/Mockito.html#0.3
+WARNING: A Java agent has been loaded dynamically (/home/ivan/.m2/repository/net/bytebuddy/byte-buddy-agent/1.15.4/byte-buddy-agent-1.15.4.jar)
+WARNING: If a serviceability tool is in use, please run with -XX:+EnableDynamicAgentLoading to hide this warning
+WARNING: If a serviceability tool is not in use, please run with -Djdk.instrument.traceUsage for more information
+WARNING: Dynamic loading of agents will be disallowed by default in a future release
+]]></system-err>
+  </testcase>
+  <testcase name="disabledReporterDoesNotEmit" classname="io.gravitee.reporter.otellogs.OtelLogsReporterTest" time="0.02"/>
+  <testcase name="endpointStatusHandledWhenReportHealthChecksEnabled" classname="io.gravitee.reporter.otellogs.OtelLogsReporterTest" time="0.021"/>
+  <testcase name="logIsMappedAndEmittedWhenReportLogsEnabled" classname="io.gravitee.reporter.otellogs.OtelLogsReporterTest" time="0.017"/>
+  <testcase name="monitorIsNeverHandled" classname="io.gravitee.reporter.otellogs.OtelLogsReporterTest" time="0.037"/>
+  <testcase name="endpointStatusIsMappedAndEmitted" classname="io.gravitee.reporter.otellogs.OtelLogsReporterTest" time="0.009"/>
+  <testcase name="logHandledWhenReportLogsEnabled" classname="io.gravitee.reporter.otellogs.OtelLogsReporterTest" time="0.009"/>
+  <testcase name="disabledReporterHandlesNothing" classname="io.gravitee.reporter.otellogs.OtelLogsReporterTest" time="0.007"/>
+  <testcase name="doStopCallsFlushAndClose" classname="io.gravitee.reporter.otellogs.OtelLogsReporterTest" time="0.006"/>
+  <testcase name="logNotEmittedWhenReportLogsDisabled" classname="io.gravitee.reporter.otellogs.OtelLogsReporterTest" time="0.006"/>
+  <testcase name="messageMetricsHandledWhenEnabled" classname="io.gravitee.reporter.otellogs.OtelLogsReporterTest" time="0.007"/>
+  <testcase name="logNotHandledWhenReportLogsDisabled" classname="io.gravitee.reporter.otellogs.OtelLogsReporterTest" time="0.004"/>
+  <testcase name="messageMetricsAreMappedAndEmitted" classname="io.gravitee.reporter.otellogs.OtelLogsReporterTest" time="0.005"/>
+  <testcase name="metricsAreAlwaysHandledWhenEnabled" classname="io.gravitee.reporter.otellogs.OtelLogsReporterTest" time="0.008"/>
+  <testcase name="endpointStatusNotHandledWhenReportHealthChecksDisabled" classname="io.gravitee.reporter.otellogs.OtelLogsReporterTest" time="0.006"/>
+  <testcase name="metricsAreMappedAndEmitted" classname="io.gravitee.reporter.otellogs.OtelLogsReporterTest" time="0.011"/>
 </testsuite>

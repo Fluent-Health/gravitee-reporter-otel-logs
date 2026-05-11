@@ -1,3 +1,4 @@
+/home/ivan/Developer/gravitee-reporter-otel-logs/src/main/java/io/gravitee/reporter/otellogs/OtelLogsReporter.java
 /home/ivan/Developer/gravitee-reporter-otel-logs/src/main/java/io/gravitee/reporter/otellogs/config/OtelLogsReporterConfiguration.java
 /home/ivan/Developer/gravitee-reporter-otel-logs/src/main/java/io/gravitee/reporter/otellogs/mapper/EndpointStatusToLogRecordMapper.java
 /home/ivan/Developer/gravitee-reporter-otel-logs/src/main/java/io/gravitee/reporter/otellogs/mapper/LogToLogRecordMapper.java
@@ -5,4 +6,5 @@
 /home/ivan/Developer/gravitee-reporter-otel-logs/src/main/java/io/gravitee/reporter/otellogs/mapper/MetricsToLogRecordMapper.java
 /home/ivan/Developer/gravitee-reporter-otel-logs/src/main/java/io/gravitee/reporter/otellogs/mapper/OtelLabels.java
 /home/ivan/Developer/gravitee-reporter-otel-logs/src/main/java/io/gravitee/reporter/otellogs/mapper/OtelLogRecord.java
+/home/ivan/Developer/gravitee-reporter-otel-logs/src/main/java/io/gravitee/reporter/otellogs/spring/OtelLogsReporterSpringConfiguration.java
 /home/ivan/Developer/gravitee-reporter-otel-logs/src/main/java/io/gravitee/reporter/otellogs/writer/OtelLogWriter.java
