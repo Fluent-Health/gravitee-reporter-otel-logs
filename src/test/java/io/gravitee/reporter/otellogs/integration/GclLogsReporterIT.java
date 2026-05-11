@@ -24,12 +24,18 @@ import io.gravitee.reporter.otellogs.writer.OtelLogWriter;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.logs.Severity;
-import io.opentelemetry.exporter.otlp.logs.OtlpGrpcLogRecordExporter;
+import io.opentelemetry.sdk.common.CompletableResultCode;
+import io.opentelemetry.sdk.logs.data.LogRecordData;
+import io.opentelemetry.sdk.logs.export.LogRecordExporter;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
@@ -39,9 +45,13 @@ import org.junit.jupiter.api.Test;
 
 /**
  * End-to-end test that writes an OTel log record to Google Cloud Logging via
- * OTLP gRPC and verifies it arrives via the Cloud Logging REST API. Requires
+ * the Cloud Logging REST API and verifies it arrives via readback. Requires
  * Application Default Credentials: in CI via Workload Identity Federation,
  * locally via {@code gcloud auth application-default login}.
+ *
+ * <p>The OTLP gRPC transport tested by OtelLogsReporterIT targets an OTel
+ * Collector (TestContainers). This test validates Cloud Logging connectivity
+ * and the OtelLogWriter lifecycle using a lightweight REST-based exporter.
  *
  * <p>Run with: {@code mvn verify -Pgcloud-integration-test}
  */
@@ -49,10 +59,13 @@ import org.junit.jupiter.api.Test;
 @Tag("gcloud-integration")
 class GclLogsReporterIT {
 
-  private static final String LOGGING_SCOPE =
-    "https://www.googleapis.com/auth/logging.read";
+  private static final String CLOUD_PLATFORM_SCOPE =
+    "https://www.googleapis.com/auth/cloud-platform";
+  private static final String ENTRIES_WRITE_URL =
+    "https://logging.googleapis.com/v2/entries:write";
   private static final String ENTRIES_LIST_URL =
     "https://logging.googleapis.com/v2/entries:list";
+  private static final String LOG_NAME = "gravitee-otel-it";
 
   private static String projectId;
   private static GoogleCredentials credentials;
@@ -70,15 +83,16 @@ class GclLogsReporterIT {
       .isNotBlank();
 
     credentials = GoogleCredentials.getApplicationDefault().createScoped(
-      LOGGING_SCOPE
+      CLOUD_PLATFORM_SCOPE
     );
+    credentials.refreshIfExpired();
     http = HttpClient.newHttpClient();
 
-    var exporter = OtlpGrpcLogRecordExporter.builder()
-      .setEndpoint("https://logging.googleapis.com")
-      .build();
-    // Batch size 1 + minimal delay so records flush immediately in tests
-    writer = new OtelLogWriter(exporter, 1, 100);
+    // GCL does not have a native OTLP gRPC endpoint — production deployments
+    // route through an OTel Collector (tested by OtelLogsReporterIT via TestContainers).
+    // Here we use a REST-based exporter to validate the OtelLogWriter lifecycle and
+    // record structure (trace ID, body, attributes) against the live GCL service.
+    writer = new OtelLogWriter(new GclRestLogRecordExporter(), 1, 100);
   }
 
   @AfterAll
@@ -93,8 +107,8 @@ class GclLogsReporterIT {
   void metricsLogRecordArrivesInGoogleCloudLogging() throws Exception {
     // Unique 32-hex traceId so this run's entry can be found unambiguously.
     String traceId = UUID.randomUUID().toString().replace("-", "");
-    // Provide a spanId so OtelLogWriter sets the OTel span context, which GCL
-    // maps to the LogEntry trace field as "projects/{project}/traces/{traceId}".
+    // Provide a spanId so OtelLogWriter sets the OTel span context,
+    // which the GclRestLogRecordExporter maps to the LogEntry trace field.
     String spanId = traceId.substring(0, 16);
 
     var record = new OtelLogRecord(
@@ -115,8 +129,7 @@ class GclLogsReporterIT {
     writer.emit(record);
     writer.flush();
 
-    // GCL maps the OTel traceId to the LogEntry trace field:
-    //   "projects/{project}/traces/{traceId}"
+    // GCL filter uses the trace field: "projects/{project}/traces/{traceId}"
     String filter = "trace=\"projects/%s/traces/%s\"".formatted(
       projectId,
       traceId
@@ -142,7 +155,6 @@ class GclLogsReporterIT {
     credentials.refreshIfExpired();
     String token = credentials.getAccessToken().getTokenValue();
 
-    // JSON-escape the filter string for embedding in the request body
     String escapedFilter = filter.replace("\"", "\\\"");
     String body = """
       {"resourceNames":["projects/%s"],"filter":"%s","pageSize":1,"orderBy":"timestamp desc"}
@@ -157,13 +169,19 @@ class GclLogsReporterIT {
       .build();
 
     var response = http.send(request, HttpResponse.BodyHandlers.ofString());
-    return (
-      response.statusCode() == 200 && response.body().contains("\"entries\"")
-    );
+    boolean found =
+      response.statusCode() == 200 && response.body().contains("\"entries\"");
+    if (!found) {
+      System.out.printf(
+        "GCL query status=%d body=%s%n",
+        response.statusCode(),
+        response.body().substring(0, Math.min(200, response.body().length()))
+      );
+    }
+    return found;
   }
 
   private static String resolveProjectId() {
-    // Prefer the explicit env var; fall back to the env vars google-github-actions/auth sets
     for (String var : List.of(
       "GOOGLE_CLOUD_PROJECT",
       "GCLOUD_PROJECT",
@@ -173,5 +191,141 @@ class GclLogsReporterIT {
       if (val != null && !val.isBlank()) return val;
     }
     return null;
+  }
+
+  // ── REST-based Cloud Logging exporter ────────────────────────────────────
+
+  /**
+   * Translates OTel {@code LogRecordData} to Cloud Logging v2 {@code entries:write}
+   * REST calls. Used in place of the OTLP gRPC exporter because Cloud Logging
+   * does not expose a native OTLP gRPC endpoint — that path requires an OTel
+   * Collector intermediary (covered by OtelLogsReporterIT via TestContainers).
+   */
+  private static class GclRestLogRecordExporter implements LogRecordExporter {
+
+    private static final DateTimeFormatter RFC3339 =
+      DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").withZone(
+        ZoneOffset.UTC
+      );
+
+    @Override
+    public CompletableResultCode export(Collection<LogRecordData> records) {
+      try {
+        credentials.refreshIfExpired();
+        String token = credentials.getAccessToken().getTokenValue();
+
+        var entries = new StringBuilder("[");
+        boolean first = true;
+        for (var rec : records) {
+          if (!first) entries.append(",");
+          first = false;
+
+          long nanos = rec.getTimestampEpochNanos();
+          String timestamp = RFC3339.format(
+            Instant.ofEpochSecond(
+              nanos / 1_000_000_000L,
+              nanos % 1_000_000_000L
+            )
+          );
+
+          entries.append("{");
+          entries.append("\"timestamp\":\"").append(timestamp).append("\",");
+          entries
+            .append("\"severity\":\"")
+            .append(mapSeverity(rec.getSeverity()))
+            .append("\",");
+          entries
+            .append("\"textPayload\":\"")
+            .append(escapeJson(rec.getBody().asString()))
+            .append("\"");
+
+          var spanCtx = rec.getSpanContext();
+          if (spanCtx.isValid()) {
+            entries
+              .append(",\"trace\":\"projects/")
+              .append(projectId)
+              .append("/traces/")
+              .append(spanCtx.getTraceId())
+              .append("\"");
+            entries
+              .append(",\"spanId\":\"")
+              .append(spanCtx.getSpanId())
+              .append("\"");
+          }
+          entries.append("}");
+        }
+        entries.append("]");
+
+        String body = ("""
+          {"logName":"projects/%s/logs/%s","resource":{"type":"global"},"entries":%s}
+          """.formatted(projectId, LOG_NAME, entries)).strip();
+
+        var request = HttpRequest.newBuilder()
+          .uri(URI.create(ENTRIES_WRITE_URL))
+          .header("Authorization", "Bearer " + token)
+          .header("Content-Type", "application/json")
+          .POST(HttpRequest.BodyPublishers.ofString(body))
+          .build();
+
+        var response = http.send(request, HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode() == 200) {
+          return CompletableResultCode.ofSuccess();
+        }
+        System.err.printf(
+          "GCL write failed: status=%d body=%s%n",
+          response.statusCode(),
+          response.body()
+        );
+        return CompletableResultCode.ofFailure();
+      } catch (Exception e) {
+        System.err.println("GCL write error: " + e.getMessage());
+        return CompletableResultCode.ofFailure();
+      }
+    }
+
+    @Override
+    public CompletableResultCode flush() {
+      return CompletableResultCode.ofSuccess();
+    }
+
+    @Override
+    public CompletableResultCode shutdown() {
+      return CompletableResultCode.ofSuccess();
+    }
+
+    private String mapSeverity(Severity severity) {
+      return switch (severity) {
+        case
+          TRACE,
+          TRACE2,
+          TRACE3,
+          TRACE4,
+          DEBUG,
+          DEBUG2,
+          DEBUG3,
+          DEBUG4 -> "DEBUG";
+        case INFO, INFO2, INFO3, INFO4 -> "INFO";
+        case WARN, WARN2, WARN3, WARN4 -> "WARNING";
+        case
+          ERROR,
+          ERROR2,
+          ERROR3,
+          ERROR4,
+          FATAL,
+          FATAL2,
+          FATAL3,
+          FATAL4 -> "ERROR";
+        default -> "DEFAULT";
+      };
+    }
+
+    private String escapeJson(String s) {
+      return s
+        .replace("\\", "\\\\")
+        .replace("\"", "\\\"")
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+        .replace("\t", "\\t");
+    }
   }
 }
