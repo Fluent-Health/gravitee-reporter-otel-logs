@@ -44,6 +44,15 @@ public class MessageMetricsToLogRecordMapper {
     );
     b.put(AttributeKey.longKey("message.count"), count);
     b.put(AttributeKey.longKey("message.error_count"), errorCount);
+    // MessageMetrics exposes a single content-length field (not separate in/out byte counts).
+    // The spec attributes message.bytes_in / message.bytes_out are not individually available
+    // in this API version; map the available field to message.content_length instead.
+    if (mm.getContentLength() > 0) {
+      b.put(
+        AttributeKey.longKey("message.content_length"),
+        mm.getContentLength()
+      );
+    }
 
     return new OtelLogRecord(
       null,

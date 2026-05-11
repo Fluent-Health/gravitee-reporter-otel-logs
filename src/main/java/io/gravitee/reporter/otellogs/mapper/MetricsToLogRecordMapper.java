@@ -140,6 +140,21 @@ public class MetricsToLogRecordMapper {
         m.getResponseContentLength()
       );
     }
+    if (m.getApplicationId() != null) {
+      b.put(
+        AttributeKey.stringKey("context.application"),
+        m.getApplicationId()
+      );
+    }
+    if (m.getPlanId() != null) {
+      b.put(AttributeKey.stringKey("context.plan"), m.getPlanId());
+    }
+    if (m.getSubscriptionId() != null) {
+      b.put(
+        AttributeKey.stringKey("context.subscription"),
+        m.getSubscriptionId()
+      );
+    }
     return b.build();
   }
 }

@@ -58,6 +58,18 @@ public class LogToLogRecordMapper {
       req.getMethod().name()
     );
     if (status > 0) b.put(AttributeKey.longKey("http.status"), (long) status);
+    if (req != null && req.getHeaders() != null) {
+      b.put(
+        AttributeKey.longKey("log.request.headers_count"),
+        (long) req.getHeaders().size()
+      );
+    }
+    if (resp != null && resp.getHeaders() != null) {
+      b.put(
+        AttributeKey.longKey("log.response.headers_count"),
+        (long) resp.getHeaders().size()
+      );
+    }
 
     return new OtelLogRecord(
       null,

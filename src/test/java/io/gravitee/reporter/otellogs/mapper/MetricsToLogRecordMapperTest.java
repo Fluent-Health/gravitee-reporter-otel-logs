@@ -157,6 +157,21 @@ class MetricsToLogRecordMapperTest {
   }
 
   @Test
+  void contextApplicationPlanAndSubscriptionAreMapped() {
+    // metrics() fixture sets applicationId="app-001", planId="plan-gold", subscriptionId="sub-abc"
+    var record = mapper.map(OtelTestSupport.metrics(200));
+    assertThat(
+      record.attributes().get(AttributeKey.stringKey("context.application"))
+    ).isEqualTo("app-001");
+    assertThat(
+      record.attributes().get(AttributeKey.stringKey("context.plan"))
+    ).isEqualTo("plan-gold");
+    assertThat(
+      record.attributes().get(AttributeKey.stringKey("context.subscription"))
+    ).isEqualTo("sub-abc");
+  }
+
+  @Test
   void timestampIsConvertedToNanoseconds() {
     var record = mapper.map(OtelTestSupport.metrics(200));
     // 2026-01-15T12:00:00Z = 1736942400000 ms → * 1_000_000

@@ -110,11 +110,20 @@ public final class OtelTestSupport {
    * and response status on entrypointResponse, we construct those sub-objects.
    */
   public static Log log(int status) {
+    HttpHeaders requestHeaders = HttpHeaders.create();
+    requestHeaders.set("Content-Type", "application/json");
+    requestHeaders.set("X-Request-ID", "test-req-id");
+
     Request entrypointRequest = new Request();
     entrypointRequest.setMethod(HttpMethod.POST);
     entrypointRequest.setUri("/api/v1/data");
+    entrypointRequest.setHeaders(requestHeaders);
+
+    HttpHeaders responseHeaders = HttpHeaders.create();
+    responseHeaders.set("Content-Type", "application/json");
 
     Response entrypointResponse = new Response(status);
+    entrypointResponse.setHeaders(responseHeaders);
 
     return Log.builder()
       .apiId("api-123")
@@ -130,6 +139,7 @@ public final class OtelTestSupport {
       .apiName("Test API")
       .count(10L)
       .errorCount(1L)
+      .contentLength(2048L)
       .build();
   }
 }

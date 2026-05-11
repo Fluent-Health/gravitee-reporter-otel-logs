@@ -1,0 +1,7 @@
+io/gravitee/reporter/otellogs/OtelTestSupport.class
+io/gravitee/reporter/otellogs/mapper/MetricsToLogRecordMapperTest.class
+io/gravitee/reporter/otellogs/writer/OtelLogWriterTest.class
+io/gravitee/reporter/otellogs/mapper/EndpointStatusToLogRecordMapperTest.class
+io/gravitee/reporter/otellogs/mapper/LogToLogRecordMapperTest.class
+io/gravitee/reporter/otellogs/mapper/MessageMetricsToLogRecordMapperTest.class
+io/gravitee/reporter/otellogs/mapper/OtelLabelsTest.class

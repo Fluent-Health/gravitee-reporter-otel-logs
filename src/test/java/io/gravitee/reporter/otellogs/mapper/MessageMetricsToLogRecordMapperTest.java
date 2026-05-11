@@ -79,4 +79,28 @@ class MessageMetricsToLogRecordMapperTest {
       record.attributes().get(AttributeKey.longKey("message.error_count"))
     ).isEqualTo(1L);
   }
+
+  @Test
+  void contentLengthAttributeIsMappedWhenPresent() {
+    // messageMetrics() fixture sets contentLength=2048
+    var record = mapper.map(OtelTestSupport.messageMetrics());
+    assertThat(
+      record.attributes().get(AttributeKey.longKey("message.content_length"))
+    ).isEqualTo(2048L);
+  }
+
+  @Test
+  void contentLengthAttributeIsAbsentWhenZero() {
+    var mm = MessageMetrics.builder()
+      .apiId("api-123")
+      .apiName("Test API")
+      .count(5L)
+      .errorCount(0L)
+      .contentLength(0L)
+      .build();
+    var record = mapper.map(mm);
+    assertThat(
+      record.attributes().get(AttributeKey.longKey("message.content_length"))
+    ).isNull();
+  }
 }

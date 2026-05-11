@@ -1,0 +1,9 @@
+io/gravitee/reporter/otellogs/config/OtelLogsReporterConfiguration.class
+io/gravitee/reporter/otellogs/mapper/EndpointStatusToLogRecordMapper.class
+io/gravitee/reporter/otellogs/mapper/OtelLabels$SentryTrace.class
+io/gravitee/reporter/otellogs/mapper/OtelLabels.class
+io/gravitee/reporter/otellogs/mapper/MetricsToLogRecordMapper.class
+io/gravitee/reporter/otellogs/mapper/LogToLogRecordMapper.class
+io/gravitee/reporter/otellogs/mapper/OtelLogRecord.class
+io/gravitee/reporter/otellogs/writer/OtelLogWriter.class
+io/gravitee/reporter/otellogs/mapper/MessageMetricsToLogRecordMapper.class

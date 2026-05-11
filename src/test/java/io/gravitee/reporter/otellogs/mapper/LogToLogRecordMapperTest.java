@@ -73,4 +73,24 @@ class LogToLogRecordMapperTest {
       record.attributes().get(AttributeKey.longKey("http.status"))
     ).isEqualTo(200L);
   }
+
+  @Test
+  void requestHeadersCountIsMapped() {
+    // log() fixture sets 2 request headers: Content-Type and X-Request-ID
+    var record = mapper.map(OtelTestSupport.log(200));
+    assertThat(
+      record.attributes().get(AttributeKey.longKey("log.request.headers_count"))
+    ).isEqualTo(2L);
+  }
+
+  @Test
+  void responseHeadersCountIsMapped() {
+    // log() fixture sets 1 response header: Content-Type
+    var record = mapper.map(OtelTestSupport.log(200));
+    assertThat(
+      record
+        .attributes()
+        .get(AttributeKey.longKey("log.response.headers_count"))
+    ).isEqualTo(1L);
+  }
 }
