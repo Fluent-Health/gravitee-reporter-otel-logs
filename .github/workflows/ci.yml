@@ -8,6 +8,11 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write   # required for GCP Workload Identity Federation
+
     steps:
       - uses: actions/checkout@v4
 
@@ -16,6 +21,11 @@ jobs:
           java-version: "21"
           distribution: "temurin"
           cache: maven
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GHA_WIF_PROVIDER }}
+          service_account: ${{ vars.GHA_SERVICE_ACCOUNT }}
 
       - name: Unit tests
         run: mvn test -q
