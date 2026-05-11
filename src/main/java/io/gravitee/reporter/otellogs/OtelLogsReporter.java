@@ -66,7 +66,17 @@ public class OtelLogsReporter
       log.info("OTel logs reporter is disabled");
       return;
     }
-    log.info("OTel logs reporter started — exporting to {}", cfg.getEndpoint());
+    if ("gcloud".equalsIgnoreCase(cfg.getExporter())) {
+      log.info(
+        "OTel logs reporter started — exporter=gcloud project={}",
+        cfg.getGcloudProjectId()
+      );
+    } else {
+      log.info(
+        "OTel logs reporter started — exporter=otlp endpoint={}",
+        cfg.getEndpoint()
+      );
+    }
   }
 
   @Override
