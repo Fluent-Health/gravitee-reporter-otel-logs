@@ -25,6 +25,13 @@ import io.opentelemetry.exporter.otlp.logs.OtlpGrpcLogRecordExporter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+/**
+ * Spring configuration for the OTel logs reporter plugin.
+ * <p>
+ * Note: {@link io.gravitee.reporter.otellogs.OtelLogsReporter} is not declared as a {@code @Bean}
+ * here — Gravitee's plugin manager instantiates and autowires it from this context automatically,
+ * using the class name declared in {@code plugin.properties}.
+ */
 @Configuration
 public class OtelLogsReporterSpringConfiguration {
 

@@ -172,7 +172,52 @@ class OtelLogsReporterTest {
   @Test
   void logNotEmittedWhenReportLogsDisabled() {
     reporter.report(OtelTestSupport.log(200));
+    verify(logMapper, never()).map(any());
     verify(writer, never()).emit(any());
+  }
+
+  @Test
+  void logIsMappedAndEmittedWhenReportLogsEnabled() {
+    when(cfg.isReportLogs()).thenReturn(true);
+    var l = OtelTestSupport.log(200);
+    var record = new OtelLogRecord(
+      null,
+      null,
+      null,
+      null,
+      io.opentelemetry.api.logs.Severity.INFO,
+      0L,
+      "body",
+      io.opentelemetry.api.common.Attributes.empty()
+    );
+    when(logMapper.map(l)).thenReturn(record);
+    reporter.report(l);
+    verify(writer).emit(record);
+  }
+
+  @Test
+  void messageMetricsAreMappedAndEmitted() {
+    var mm = OtelTestSupport.messageMetrics();
+    var record = new OtelLogRecord(
+      null,
+      null,
+      null,
+      null,
+      io.opentelemetry.api.logs.Severity.INFO,
+      0L,
+      "body",
+      io.opentelemetry.api.common.Attributes.empty()
+    );
+    when(messageMapper.map(mm)).thenReturn(record);
+    reporter.report(mm);
+    verify(writer).emit(record);
+  }
+
+  @Test
+  void doStopCallsFlushAndClose() throws Exception {
+    reporter.doStop();
+    verify(writer).flush();
+    verify(writer).close();
   }
 
   @Test

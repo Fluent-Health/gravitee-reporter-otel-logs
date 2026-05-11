@@ -71,9 +71,8 @@ public class OtelLogsReporter
 
   @Override
   protected void doStop() throws Exception {
-    if (cfg.isEnabled()) {
-      writer.close();
-    }
+    writer.flush();
+    writer.close();
     super.doStop();
   }
 
@@ -96,11 +95,15 @@ public class OtelLogsReporter
       OtelLogRecord record = null;
       if (reportable instanceof Metrics m) {
         record = metricsMapper.map(m);
-      } else if (reportable instanceof EndpointStatus es) {
+      } else if (
+        reportable instanceof EndpointStatus es && cfg.isReportHealthChecks()
+      ) {
         record = endpointMapper.map(es);
-      } else if (reportable instanceof Log l) {
+      } else if (reportable instanceof Log l && cfg.isReportLogs()) {
         record = logMapper.map(l);
-      } else if (reportable instanceof MessageMetrics mm) {
+      } else if (
+        reportable instanceof MessageMetrics mm && cfg.isReportMessageMetrics()
+      ) {
         record = messageMapper.map(mm);
       }
       if (record != null) {
