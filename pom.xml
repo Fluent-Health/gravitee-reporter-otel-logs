@@ -182,11 +182,13 @@
             <version>4.2.2</version>
             <scope>test</scope>
         </dependency>
-        <!-- Cloud Logging client — used only by GclLogsReporterIT to read back entries -->
+        <!-- ADC auth (HTTP-only) — used by GclLogsReporterIT to obtain bearer tokens
+             for the Cloud Logging REST API. Avoids gRPC version conflicts with the
+             OTel OTLP exporter which resolves grpc-api to 1.65.1. -->
         <dependency>
-            <groupId>com.google.cloud</groupId>
-            <artifactId>google-cloud-logging</artifactId>
-            <version>3.20.0</version>
+            <groupId>com.google.auth</groupId>
+            <artifactId>google-auth-library-oauth2-http</artifactId>
+            <version>1.27.0</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
@@ -326,7 +328,7 @@
                         </executions>
                         <configuration>
                             <includes><include>**/*IT.java</include></includes>
-                            <includedGroups>gcloud-integration</includedGroups>
+                            <groups>gcloud-integration</groups>
                             <argLine>
                                 -Dnet.bytebuddy.experimental=true
                                 --add-opens java.base/java.lang=ALL-UNNAMED

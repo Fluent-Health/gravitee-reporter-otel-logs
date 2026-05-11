@@ -18,18 +18,19 @@ package io.gravitee.reporter.otellogs.integration;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
-import com.google.api.gax.paging.Page;
-import com.google.cloud.logging.LogEntry;
-import com.google.cloud.logging.Logging;
-import com.google.cloud.logging.Logging.EntryListOption;
-import com.google.cloud.logging.LoggingOptions;
+import com.google.auth.oauth2.GoogleCredentials;
 import io.gravitee.reporter.otellogs.mapper.OtelLogRecord;
 import io.gravitee.reporter.otellogs.writer.OtelLogWriter;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.logs.Severity;
 import io.opentelemetry.exporter.otlp.logs.OtlpGrpcLogRecordExporter;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -38,34 +39,45 @@ import org.junit.jupiter.api.Test;
 
 /**
  * End-to-end test that writes an OTel log record to Google Cloud Logging via
- * OTLP gRPC and verifies it arrives. Requires Application Default Credentials:
- * in CI via Workload Identity Federation, locally via `gcloud auth application-default login`.
+ * OTLP gRPC and verifies it arrives via the Cloud Logging REST API. Requires
+ * Application Default Credentials: in CI via Workload Identity Federation,
+ * locally via {@code gcloud auth application-default login}.
  *
- * Run with: mvn verify -Pgcloud-integration-test
+ * <p>Run with: {@code mvn verify -Pgcloud-integration-test}
  */
 @Tag("integration")
 @Tag("gcloud-integration")
 class GclLogsReporterIT {
 
-  private static Logging logging;
+  private static final String LOGGING_SCOPE =
+    "https://www.googleapis.com/auth/logging.read";
+  private static final String ENTRIES_LIST_URL =
+    "https://logging.googleapis.com/v2/entries:list";
+
   private static String projectId;
+  private static GoogleCredentials credentials;
+  private static HttpClient http;
   private static OtelLogWriter writer;
 
   @BeforeAll
-  static void setUp() {
-    logging = LoggingOptions.getDefaultInstance().getService();
-    projectId = LoggingOptions.getDefaultInstance().getProjectId();
+  static void setUp() throws Exception {
+    projectId = resolveProjectId();
     assertThat(projectId)
       .as(
-        "GCP project ID must be discoverable via ADC or GOOGLE_CLOUD_PROJECT env var"
+        "GCP project ID must be set via GOOGLE_CLOUD_PROJECT env var or discoverable from ADC"
       )
       .isNotNull()
       .isNotBlank();
 
+    credentials = GoogleCredentials.getApplicationDefault().createScoped(
+      LOGGING_SCOPE
+    );
+    http = HttpClient.newHttpClient();
+
     var exporter = OtlpGrpcLogRecordExporter.builder()
       .setEndpoint("https://logging.googleapis.com")
       .build();
-    // Single-item batches and minimal delay to flush immediately in tests
+    // Batch size 1 + minimal delay so records flush immediately in tests
     writer = new OtelLogWriter(exporter, 1, 100);
   }
 
@@ -75,16 +87,14 @@ class GclLogsReporterIT {
       writer.flush();
       writer.close();
     }
-    if (logging != null) {
-      logging.close();
-    }
   }
 
   @Test
-  void metricsLogRecordArrivesInGoogleCloudLogging() {
-    // Use a unique 32-hex traceId so this test run's entry can be found unambiguously.
+  void metricsLogRecordArrivesInGoogleCloudLogging() throws Exception {
+    // Unique 32-hex traceId so this run's entry can be found unambiguously.
     String traceId = UUID.randomUUID().toString().replace("-", "");
-    // Provide a spanId so OtelLogWriter sets the OTel span context, which GCL maps to the trace field.
+    // Provide a spanId so OtelLogWriter sets the OTel span context, which GCL
+    // maps to the LogEntry trace field as "projects/{project}/traces/{traceId}".
     String spanId = traceId.substring(0, 16);
 
     var record = new OtelLogRecord(
@@ -105,10 +115,9 @@ class GclLogsReporterIT {
     writer.emit(record);
     writer.flush();
 
-    // GCL maps the OTel traceId to the LogEntry trace field as
-    // "projects/{project}/traces/{traceId}".
-    String filter = String.format(
-      "trace=\"projects/%s/traces/%s\"",
+    // GCL maps the OTel traceId to the LogEntry trace field:
+    //   "projects/{project}/traces/{traceId}"
+    String filter = "trace=\"projects/%s/traces/%s\"".formatted(
       projectId,
       traceId
     );
@@ -122,18 +131,47 @@ class GclLogsReporterIT {
           condition.getElapsedTimeInMS() / 1000.0
         )
       )
-      .until(() -> {
-        Page<LogEntry> page = logging.listLogEntries(
-          EntryListOption.filter(filter)
-        );
-        return page.iterateAll().iterator().hasNext();
-      });
+      .until(() -> queryLogEntries(filter));
 
-    Page<LogEntry> page = logging.listLogEntries(
-      EntryListOption.filter(filter)
+    assertThat(queryLogEntries(filter)).isTrue();
+  }
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
+
+  private static boolean queryLogEntries(String filter) throws Exception {
+    credentials.refreshIfExpired();
+    String token = credentials.getAccessToken().getTokenValue();
+
+    // JSON-escape the filter string for embedding in the request body
+    String escapedFilter = filter.replace("\"", "\\\"");
+    String body = """
+      {"resourceNames":["projects/%s"],"filter":"%s","pageSize":1,"orderBy":"timestamp desc"}
+      """.formatted(projectId, escapedFilter)
+      .strip();
+
+    var request = HttpRequest.newBuilder()
+      .uri(URI.create(ENTRIES_LIST_URL))
+      .header("Authorization", "Bearer " + token)
+      .header("Content-Type", "application/json")
+      .POST(HttpRequest.BodyPublishers.ofString(body))
+      .build();
+
+    var response = http.send(request, HttpResponse.BodyHandlers.ofString());
+    return (
+      response.statusCode() == 200 && response.body().contains("\"entries\"")
     );
-    LogEntry entry = page.iterateAll().iterator().next();
-    assertThat(entry).isNotNull();
-    assertThat(entry.getLogName()).contains("projects/" + projectId);
+  }
+
+  private static String resolveProjectId() {
+    // Prefer the explicit env var; fall back to the env vars google-github-actions/auth sets
+    for (String var : List.of(
+      "GOOGLE_CLOUD_PROJECT",
+      "GCLOUD_PROJECT",
+      "CLOUDSDK_CORE_PROJECT"
+    )) {
+      String val = System.getenv(var);
+      if (val != null && !val.isBlank()) return val;
+    }
+    return null;
   }
 }
