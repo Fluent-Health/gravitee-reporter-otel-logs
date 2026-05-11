@@ -59,11 +59,11 @@ class OtelLabelsTest {
 
   @Test
   void validSentryTraceHeaderParsesTraceAndSpanId() {
-    String[] parts = OtelLabels.parseSentryTrace(
+    OtelLabels.SentryTrace st = OtelLabels.parseSentryTrace(
       "771a43a4192642f0b136d5159a501700-7d17675a3e4f44e8-1"
     ).orElseThrow();
-    assertThat(parts[0]).isEqualTo("771a43a4192642f0b136d5159a501700");
-    assertThat(parts[1]).isEqualTo("7d17675a3e4f44e8");
+    assertThat(st.traceId()).isEqualTo("771a43a4192642f0b136d5159a501700");
+    assertThat(st.spanId()).isEqualTo("7d17675a3e4f44e8");
   }
 
   @Test
@@ -79,6 +79,23 @@ class OtelLabelsTest {
   @Test
   void tooFewSentryTraceSegmentsReturnsEmpty() {
     assertThat(OtelLabels.parseSentryTrace("onlyone")).isEmpty();
+  }
+
+  @Test
+  void nonHexSentryTraceSegmentsReturnEmpty() {
+    assertThat(
+      OtelLabels.parseSentryTrace(
+        "notHex32chars00000000000000000000-notHex16c0000000-1"
+      )
+    ).isEmpty();
+  }
+
+  @Test
+  void invalidLengthTraceIdInSentryTraceReturnsEmpty() {
+    // traceId is only 8 chars, not 32
+    assertThat(
+      OtelLabels.parseSentryTrace("771a43a4-7d17675a3e4f44e8-1")
+    ).isEmpty();
   }
 
   // ===== severityFromStatus =====

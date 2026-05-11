@@ -29,8 +29,13 @@ import io.opentelemetry.sdk.logs.export.BatchLogRecordProcessor;
 import io.opentelemetry.sdk.logs.export.LogRecordExporter;
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
+import org.slf4j.LoggerFactory;
 
 public class OtelLogWriter implements AutoCloseable {
+
+  private static final org.slf4j.Logger log = LoggerFactory.getLogger(
+    OtelLogWriter.class
+  );
 
   private final SdkLoggerProvider sdkLoggerProvider;
   private final Logger otelLogger;
@@ -40,6 +45,16 @@ public class OtelLogWriter implements AutoCloseable {
     int batchSize,
     int scheduledDelayMs
   ) {
+    if (batchSize <= 0) {
+      throw new IllegalArgumentException(
+        "batchSize must be > 0, got: " + batchSize
+      );
+    }
+    if (scheduledDelayMs <= 0) {
+      throw new IllegalArgumentException(
+        "scheduledDelayMs must be > 0, got: " + scheduledDelayMs
+      );
+    }
     var processor = BatchLogRecordProcessor.builder(exporter)
       .setMaxExportBatchSize(batchSize)
       .setScheduleDelay(Duration.ofMillis(scheduledDelayMs))
@@ -51,50 +66,57 @@ public class OtelLogWriter implements AutoCloseable {
   }
 
   public void emit(OtelLogRecord record) {
-    AttributesBuilder attrsBuilder = record.attributes().toBuilder();
+    try {
+      AttributesBuilder attrsBuilder = record.attributes().toBuilder();
 
-    if (record.sentryTraceId() != null) {
-      attrsBuilder.put(
-        AttributeKey.stringKey("sentry.trace_id"),
-        record.sentryTraceId()
-      );
+      if (record.sentryTraceId() != null) {
+        attrsBuilder.put(
+          AttributeKey.stringKey("sentry.trace_id"),
+          record.sentryTraceId()
+        );
+      }
+      if (record.sentrySpanId() != null) {
+        attrsBuilder.put(
+          AttributeKey.stringKey("sentry.span_id"),
+          record.sentrySpanId()
+        );
+      }
+
+      var builder = otelLogger
+        .logRecordBuilder()
+        .setSeverity(record.severity())
+        .setTimestamp(record.timestampEpochNanos(), TimeUnit.NANOSECONDS)
+        .setBody(record.body())
+        .setAllAttributes(attrsBuilder.build());
+
+      if (record.traceId() != null && record.spanId() != null) {
+        var spanCtx = SpanContext.create(
+          record.traceId(),
+          record.spanId(),
+          TraceFlags.getSampled(),
+          TraceState.getDefault()
+        );
+        builder.setContext(Context.root().with(Span.wrap(spanCtx)));
+      }
+
+      builder.emit();
+    } catch (Throwable t) {
+      log.warn("Failed to emit OTel log record: {}", t.getMessage(), t);
     }
-    if (record.sentrySpanId() != null) {
-      attrsBuilder.put(
-        AttributeKey.stringKey("sentry.span_id"),
-        record.sentrySpanId()
-      );
-    }
-
-    var builder = otelLogger
-      .logRecordBuilder()
-      .setSeverity(record.severity())
-      .setTimestamp(record.timestampEpochNanos(), TimeUnit.NANOSECONDS)
-      .setBody(record.body())
-      .setAllAttributes(attrsBuilder.build());
-
-    if (record.traceId() != null) {
-      String spanId = record.spanId() != null
-        ? record.spanId()
-        : record.traceId().substring(0, 16);
-      var spanCtx = SpanContext.create(
-        record.traceId(),
-        spanId,
-        TraceFlags.getDefault(),
-        TraceState.getDefault()
-      );
-      builder.setContext(Context.root().with(Span.wrap(spanCtx)));
-    }
-
-    builder.emit();
   }
 
   public void flush() {
-    sdkLoggerProvider.forceFlush().join(10, TimeUnit.SECONDS);
+    var result = sdkLoggerProvider.forceFlush().join(10, TimeUnit.SECONDS);
+    if (!result.isSuccess()) {
+      log.warn("OTel log flush did not complete successfully");
+    }
   }
 
   @Override
   public void close() {
-    sdkLoggerProvider.shutdown().join(10, TimeUnit.SECONDS);
+    var result = sdkLoggerProvider.shutdown().join(10, TimeUnit.SECONDS);
+    if (!result.isSuccess()) {
+      log.warn("OTel log provider shutdown did not complete successfully");
+    }
   }
 }

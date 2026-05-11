@@ -31,4 +31,8 @@ public record OtelLogRecord(
   long timestampEpochNanos,
   String body,
   Attributes attributes
-) {}
+) {
+  public OtelLogRecord {
+    if (attributes == null) attributes = Attributes.empty();
+  }
+}

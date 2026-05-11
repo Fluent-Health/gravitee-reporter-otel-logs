@@ -21,7 +21,11 @@ import java.util.regex.Pattern;
 
 public final class OtelLabels {
 
+  /** Typed result of parsing a {@code sentry-trace} header. */
+  public record SentryTrace(String traceId, String spanId) {}
+
   private static final Pattern HEX_32 = Pattern.compile("[0-9a-fA-F]{32}");
+  private static final Pattern HEX_16 = Pattern.compile("[0-9a-fA-F]{16}");
   private static final Pattern NUMERIC_SEGMENT = Pattern.compile("/\\d+");
   private static final Pattern UUID_SEGMENT = Pattern.compile(
     "/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
@@ -45,15 +49,21 @@ public final class OtelLabels {
 
   /**
    * Parses a sentry-trace header of the form "{traceId}-{spanId}-{sampled}".
-   * Returns Optional.empty() when the header is absent or malformed (fewer than 2 segments).
+   * Returns Optional.empty() when the header is absent, malformed (fewer than 2 segments),
+   * or when traceId/spanId segments fail hex-length validation.
    */
-  public static Optional<String[]> parseSentryTrace(String header) {
+  public static Optional<SentryTrace> parseSentryTrace(String header) {
     if (header == null || header.isBlank()) return Optional.empty();
     String[] parts = header.strip().split("-", 3);
-    if (parts.length < 2 || parts[0].isBlank() || parts[1].isBlank()) {
+    if (parts.length < 2) return Optional.empty();
+    String traceId = parts[0];
+    String spanId = parts[1];
+    if (
+      !HEX_32.matcher(traceId).matches() || !HEX_16.matcher(spanId).matches()
+    ) {
       return Optional.empty();
     }
-    return Optional.of(parts);
+    return Optional.of(new SentryTrace(traceId, spanId));
   }
 
   /**

@@ -103,29 +103,49 @@ class OtelLogWriterTest {
   }
 
   @Test
-  void recordWithOnlyTraceIdUsesFirstHalfAsSpanId() {
-    var record = new OtelLogRecord(
-      "550e8400e29b41d4a716446655440000",
-      null,
-      null,
-      null,
-      Severity.WARN,
-      Instant.now().toEpochMilli() * 1_000_000L,
-      "GET /api/v1/items/42 → 404",
-      Attributes.empty()
+  void recordWithOnlyTraceIdDoesNotSetSpanContext() {
+    String traceId = "a1b2c3d4e5f60718a1b2c3d4e5f60718";
+    writer.emit(
+      new OtelLogRecord(
+        traceId,
+        null,
+        null,
+        null,
+        Severity.INFO,
+        Instant.now().toEpochMilli() * 1_000_000L,
+        "trace only",
+        Attributes.empty()
+      )
     );
-
-    writer.emit(record);
     writer.flush();
+    var records = exporter.getFinishedLogRecordItems();
+    assertThat(records).hasSize(1);
+    var record = records.get(0);
+    // No span context should be set — span context is invalid (all zeros)
+    assertThat(record.getSpanContext().isValid()).isFalse();
+  }
 
-    var logs = exporter.getFinishedLogRecordItems();
-    assertThat(logs).hasSize(1);
-    assertThat(logs.get(0).getSpanContext().getTraceId()).isEqualTo(
-      "550e8400e29b41d4a716446655440000"
-    );
-    assertThat(logs.get(0).getSpanContext().getSpanId()).isEqualTo(
-      "550e8400e29b41d4" // first 16 chars of traceId
-    );
+  @Test
+  void emitIsThreadSafe() throws Exception {
+    int count = 500;
+    java.util.stream.IntStream.range(0, count)
+      .parallel()
+      .forEach(i ->
+        writer.emit(
+          new OtelLogRecord(
+            null,
+            null,
+            null,
+            null,
+            Severity.INFO,
+            System.nanoTime(),
+            "msg-" + i,
+            Attributes.empty()
+          )
+        )
+      );
+    writer.flush();
+    assertThat(exporter.getFinishedLogRecordItems()).hasSize(count);
   }
 
   @Test
