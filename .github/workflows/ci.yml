@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write # required for GCP Workload Identity Federation
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: "21"
+          distribution: "temurin"
+          cache: maven
+
+      - name: Unit tests
+        run: mvn test -q
+
+      - name: Integration tests (TestContainers — OTel Collector + Loki)
+        run: mvn verify -Pintegration-test -q
+
+      # Auth is placed here so the credentials file written by the action is not
+      # present when prettier runs during `mvn test` above (prettier scans the
+      # working directory and would fail on the generated gha-creds-*.json file).
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GHA_WIF_PROVIDER }}
+          service_account: ${{ vars.GHA_SERVICE_ACCOUNT }}
+
+      - name: Integration tests (Google Cloud Logging — live write + readback)
+        run: mvn verify -Pgcloud-integration-test -q
+        env:
+          GOOGLE_CLOUD_PROJECT: ${{ vars.GCP_PROJECT_ID }}
+
+      - name: Build plugin ZIP
+        run: mvn package -DskipTests -q
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: plugin-zip
+          path: target/gravitee-reporter-otel-logs-*.zip
+          retention-days: 7

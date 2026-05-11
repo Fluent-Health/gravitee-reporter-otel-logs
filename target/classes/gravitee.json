@@ -1,0 +1,40 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "title": "OTel Logs Reporter",
+  "description": "Reports API gateway request logs to Google Cloud Logging via OpenTelemetry OTLP",
+  "properties": {
+    "enabled": {
+      "type": "boolean",
+      "default": true
+    },
+    "endpoint": {
+      "type": "string",
+      "default": "https://logging.googleapis.com"
+    },
+    "correlationHeader": {
+      "type": "string",
+      "default": "X-Request-ID"
+    },
+    "batchSize": {
+      "type": "integer",
+      "default": 512
+    },
+    "scheduledDelayMs": {
+      "type": "integer",
+      "default": 5000
+    },
+    "reportHealthChecks": {
+      "type": "boolean",
+      "default": true
+    },
+    "reportLogs": {
+      "type": "boolean",
+      "default": false
+    },
+    "reportMessageMetrics": {
+      "type": "boolean",
+      "default": true
+    }
+  }
+}
