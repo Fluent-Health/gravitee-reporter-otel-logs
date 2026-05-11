@@ -137,17 +137,11 @@ Releases follow **semver tagging**. To publish a new release:
 
 ### GCP Configuration
 
-#### Background — why two modes exist
+#### Background
 
-The OTel project defines a standard OTLP transport for logs, and the ideal setup would be to point this plugin directly at a Google-hosted OTLP endpoint — no collector required. That endpoint does not exist yet for logs.
+Google does not expose a native OTLP endpoint for logs as of mid-2026. `telemetry.googleapis.com` supports traces only (OTLP logs return `UNIMPLEMENTED`); `logging.googleapis.com` speaks the proprietary `LoggingServiceV2` gRPC API, not OTLP. The `otlp` mode therefore requires an OTel Collector as a translation layer. The `gcloud` mode eliminates that by calling the Cloud Logging REST API directly from the plugin.
 
-Google's `telemetry.googleapis.com` is a native OTLP ingestion endpoint, but as of mid-2026 it only supports **traces**. Sending OTLP logs to it returns `UNIMPLEMENTED`. The `logging.googleapis.com` endpoint exposes Cloud Logging's own gRPC API (`google.logging.v2.LoggingServiceV2`), which is a completely different protocol — not OTLP. There is no publicly available endpoint that accepts raw OTLP logs and writes them to Cloud Logging today.
-
-This is why the `otlp` mode requires an **OTel Collector** (`otelcol-contrib`) as an intermediary: the collector speaks OTLP on the receive side and translates to the native Cloud Logging API on the export side via the `googlecloud` exporter.
-
-The `gcloud` mode was added to eliminate that operational overhead. Instead of routing through a collector, the plugin calls the Cloud Logging REST API v2 (`entries:write`) directly, using Application Default Credentials (or an optional service-account key file). The OTel SDK's batching and retry layer still runs inside the plugin — only the final HTTP write is different.
-
-**Future:** when Google adds native OTLP log ingestion to `telemetry.googleapis.com`, the `otlp` mode will work without a collector — just set `endpoint: https://telemetry.googleapis.com` and remove the collector from the stack. No code changes required; it is a config-only switch.
+When Google adds native OTLP log ingestion to `telemetry.googleapis.com`, switching to collector-free OTLP will be a one-line config change (`endpoint: https://telemetry.googleapis.com`) — no code changes needed.
 
 #### 1. IAM — grant write access
 
