@@ -20,22 +20,16 @@ import static org.awaitility.Awaitility.await;
 
 import com.google.auth.oauth2.GoogleCredentials;
 import io.gravitee.reporter.otellogs.mapper.OtelLogRecord;
+import io.gravitee.reporter.otellogs.writer.GclLogRecordExporter;
 import io.gravitee.reporter.otellogs.writer.OtelLogWriter;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.logs.Severity;
-import io.opentelemetry.sdk.common.CompletableResultCode;
-import io.opentelemetry.sdk.logs.data.LogRecordData;
-import io.opentelemetry.sdk.logs.export.LogRecordExporter;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
-import java.time.Instant;
-import java.time.ZoneOffset;
-import java.time.format.DateTimeFormatter;
-import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
@@ -44,14 +38,13 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
- * End-to-end test that writes an OTel log record to Google Cloud Logging via
- * the Cloud Logging REST API and verifies it arrives via readback. Requires
- * Application Default Credentials: in CI via Workload Identity Federation,
- * locally via {@code gcloud auth application-default login}.
+ * End-to-end test that writes an OTel log record to Google Cloud Logging via the
+ * native {@link GclLogRecordExporter} and verifies it arrives via REST readback.
  *
- * <p>The OTLP gRPC transport tested by OtelLogsReporterIT targets an OTel
- * Collector (TestContainers). This test validates Cloud Logging connectivity
- * and the OtelLogWriter lifecycle using a lightweight REST-based exporter.
+ * <p>Requires Application Default Credentials: in CI via Workload Identity Federation,
+ * locally via {@code gcloud auth application-default login}. The GCP project is
+ * resolved from the {@code GOOGLE_CLOUD_PROJECT} (or {@code GCLOUD_PROJECT} /
+ * {@code CLOUDSDK_CORE_PROJECT}) environment variable.
  *
  * <p>Run with: {@code mvn verify -Pgcloud-integration-test}
  */
@@ -61,8 +54,6 @@ class GclLogsReporterIT {
 
   private static final String CLOUD_PLATFORM_SCOPE =
     "https://www.googleapis.com/auth/cloud-platform";
-  private static final String ENTRIES_WRITE_URL =
-    "https://logging.googleapis.com/v2/entries:write";
   private static final String ENTRIES_LIST_URL =
     "https://logging.googleapis.com/v2/entries:list";
   private static final String LOG_NAME = "gravitee-otel-it";
@@ -88,11 +79,9 @@ class GclLogsReporterIT {
     credentials.refreshIfExpired();
     http = HttpClient.newHttpClient();
 
-    // GCL does not have a native OTLP gRPC endpoint — production deployments
-    // route through an OTel Collector (tested by OtelLogsReporterIT via TestContainers).
-    // Here we use a REST-based exporter to validate the OtelLogWriter lifecycle and
-    // record structure (trace ID, body, attributes) against the live GCL service.
-    writer = new OtelLogWriter(new GclRestLogRecordExporter(), 1, 100);
+    // Use the production GclLogRecordExporter — ADC only (no credentials file)
+    var exporter = new GclLogRecordExporter(projectId, LOG_NAME, null);
+    writer = new OtelLogWriter(exporter, 1, 100);
   }
 
   @AfterAll
@@ -108,7 +97,7 @@ class GclLogsReporterIT {
     // Unique 32-hex traceId so this run's entry can be found unambiguously.
     String traceId = UUID.randomUUID().toString().replace("-", "");
     // Provide a spanId so OtelLogWriter sets the OTel span context,
-    // which the GclRestLogRecordExporter maps to the LogEntry trace field.
+    // which GclLogRecordExporter maps to the LogEntry trace field.
     String spanId = traceId.substring(0, 16);
 
     var record = new OtelLogRecord(
@@ -191,141 +180,5 @@ class GclLogsReporterIT {
       if (val != null && !val.isBlank()) return val;
     }
     return null;
-  }
-
-  // ── REST-based Cloud Logging exporter ────────────────────────────────────
-
-  /**
-   * Translates OTel {@code LogRecordData} to Cloud Logging v2 {@code entries:write}
-   * REST calls. Used in place of the OTLP gRPC exporter because Cloud Logging
-   * does not expose a native OTLP gRPC endpoint — that path requires an OTel
-   * Collector intermediary (covered by OtelLogsReporterIT via TestContainers).
-   */
-  private static class GclRestLogRecordExporter implements LogRecordExporter {
-
-    private static final DateTimeFormatter RFC3339 =
-      DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").withZone(
-        ZoneOffset.UTC
-      );
-
-    @Override
-    public CompletableResultCode export(Collection<LogRecordData> records) {
-      try {
-        credentials.refreshIfExpired();
-        String token = credentials.getAccessToken().getTokenValue();
-
-        var entries = new StringBuilder("[");
-        boolean first = true;
-        for (var rec : records) {
-          if (!first) entries.append(",");
-          first = false;
-
-          long nanos = rec.getTimestampEpochNanos();
-          String timestamp = RFC3339.format(
-            Instant.ofEpochSecond(
-              nanos / 1_000_000_000L,
-              nanos % 1_000_000_000L
-            )
-          );
-
-          entries.append("{");
-          entries.append("\"timestamp\":\"").append(timestamp).append("\",");
-          entries
-            .append("\"severity\":\"")
-            .append(mapSeverity(rec.getSeverity()))
-            .append("\",");
-          entries
-            .append("\"textPayload\":\"")
-            .append(escapeJson(rec.getBody().asString()))
-            .append("\"");
-
-          var spanCtx = rec.getSpanContext();
-          if (spanCtx.isValid()) {
-            entries
-              .append(",\"trace\":\"projects/")
-              .append(projectId)
-              .append("/traces/")
-              .append(spanCtx.getTraceId())
-              .append("\"");
-            entries
-              .append(",\"spanId\":\"")
-              .append(spanCtx.getSpanId())
-              .append("\"");
-          }
-          entries.append("}");
-        }
-        entries.append("]");
-
-        String body = ("""
-          {"logName":"projects/%s/logs/%s","resource":{"type":"global"},"entries":%s}
-          """.formatted(projectId, LOG_NAME, entries)).strip();
-
-        var request = HttpRequest.newBuilder()
-          .uri(URI.create(ENTRIES_WRITE_URL))
-          .header("Authorization", "Bearer " + token)
-          .header("Content-Type", "application/json")
-          .POST(HttpRequest.BodyPublishers.ofString(body))
-          .build();
-
-        var response = http.send(request, HttpResponse.BodyHandlers.ofString());
-        if (response.statusCode() == 200) {
-          return CompletableResultCode.ofSuccess();
-        }
-        System.err.printf(
-          "GCL write failed: status=%d body=%s%n",
-          response.statusCode(),
-          response.body()
-        );
-        return CompletableResultCode.ofFailure();
-      } catch (Exception e) {
-        System.err.println("GCL write error: " + e.getMessage());
-        return CompletableResultCode.ofFailure();
-      }
-    }
-
-    @Override
-    public CompletableResultCode flush() {
-      return CompletableResultCode.ofSuccess();
-    }
-
-    @Override
-    public CompletableResultCode shutdown() {
-      return CompletableResultCode.ofSuccess();
-    }
-
-    private String mapSeverity(Severity severity) {
-      return switch (severity) {
-        case
-          TRACE,
-          TRACE2,
-          TRACE3,
-          TRACE4,
-          DEBUG,
-          DEBUG2,
-          DEBUG3,
-          DEBUG4 -> "DEBUG";
-        case INFO, INFO2, INFO3, INFO4 -> "INFO";
-        case WARN, WARN2, WARN3, WARN4 -> "WARNING";
-        case
-          ERROR,
-          ERROR2,
-          ERROR3,
-          ERROR4,
-          FATAL,
-          FATAL2,
-          FATAL3,
-          FATAL4 -> "ERROR";
-        default -> "DEFAULT";
-      };
-    }
-
-    private String escapeJson(String s) {
-      return s
-        .replace("\\", "\\\\")
-        .replace("\"", "\\\"")
-        .replace("\n", "\\n")
-        .replace("\r", "\\r")
-        .replace("\t", "\\t");
-    }
   }
 }

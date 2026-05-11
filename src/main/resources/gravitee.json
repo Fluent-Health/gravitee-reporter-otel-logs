@@ -8,9 +8,16 @@
       "type": "boolean",
       "default": true
     },
+    "exporter": {
+      "type": "string",
+      "enum": ["otlp", "gcloud"],
+      "default": "otlp",
+      "description": "Export mode: 'otlp' sends via OTLP gRPC to an OTel Collector; 'gcloud' writes directly to Cloud Logging REST API."
+    },
     "endpoint": {
       "type": "string",
-      "default": "https://logging.googleapis.com"
+      "default": "http://localhost:4317",
+      "description": "OTLP gRPC endpoint (used only when exporter=otlp)."
     },
     "correlationHeader": {
       "type": "string",
@@ -35,6 +42,25 @@
     "reportMessageMetrics": {
       "type": "boolean",
       "default": true
+    },
+    "gcloud": {
+      "type": "object",
+      "description": "Google Cloud Logging settings (used only when exporter=gcloud).",
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "description": "GCP project ID where logs are written. Required when exporter=gcloud."
+        },
+        "logName": {
+          "type": "string",
+          "default": "gravitee-api-gateway",
+          "description": "Cloud Logging log name (appears under projects/{projectId}/logs/{logName})."
+        },
+        "credentialsFile": {
+          "type": "string",
+          "description": "Path to a service-account key JSON file. Omit to use Application Default Credentials (recommended on GKE via Workload Identity)."
+        }
+      }
     }
   }
 }

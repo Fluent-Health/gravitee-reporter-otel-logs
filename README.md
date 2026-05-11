@@ -1,6 +1,11 @@
 # Gravitee Reporter OTel Logs
 
-A Gravitee APIM reporter plugin that emits structured per-request log records via the OpenTelemetry Logs SDK, exported via OTLP gRPC to an OpenTelemetry Collector. The collector forwards records to Google Cloud Logging; Grafana Alloy then bridges them to Grafana Cloud Loki for querying. W3C trace context fields (`trace_id`, `span_id`) are first-class citizens in every record, enabling cross-service correlation with Cloud Trace and Sentry.
+A Gravitee APIM reporter plugin that emits structured per-request log records via the OpenTelemetry Logs SDK. Two export modes are supported:
+
+- **`otlp`** (default) — sends records via OTLP gRPC to an OpenTelemetry Collector, which forwards them to Google Cloud Logging. Grafana Alloy can then bridge them to Grafana Cloud Loki for querying.
+- **`gcloud`** — writes records directly to Cloud Logging via the REST API v2, without an OTel Collector. Authentication uses Application Default Credentials (ADC) or an optional service-account key file.
+
+W3C trace context fields (`trace_id`, `span_id`) are first-class citizens in every record, enabling cross-service correlation with Cloud Trace and Sentry.
 
 A project by [Fluent Health](https://github.com/Fluent-Health).
 
@@ -21,13 +26,16 @@ mvn verify
 
 The `.tool-versions` file pins Java 21 (Temurin) and Maven 3.9. `mvn verify` compiles, runs the unit test suite, and produces the plugin ZIP at `target/gravitee-reporter-otel-logs-*.zip`.
 
-To load the plugin into a local Gravitee gateway, copy the ZIP to the gateway's `plugins-ext/` directory and add the following to `gravitee.yml`:
+To load the plugin into a local Gravitee gateway, copy the ZIP to the gateway's `plugins-ext/` directory and add one of the following blocks to `gravitee.yml`:
+
+**OTLP mode** (via OTel Collector):
 
 ```yaml
 reporters:
   otel-logs:
     enabled: true
-    endpoint: "http://localhost:4317"   # OTLP gRPC — point at your OTel Collector
+    exporter: otlp
+    endpoint: "http://localhost:4317"
     correlationHeader: "X-Request-ID"
     batchSize: 512
     scheduledDelayMs: 5000
@@ -36,7 +44,26 @@ reporters:
     reportMessageMetrics: true
 ```
 
-The `endpoint` must resolve to a running OpenTelemetry Collector that accepts OTLP gRPC. Cloud Logging does not expose a native OTLP gRPC endpoint — the collector handles translation. See [GCP Configuration](#gcp-configuration) below.
+**GCloud mode** (direct to Cloud Logging, no Collector needed):
+
+```yaml
+reporters:
+  otel-logs:
+    enabled: true
+    exporter: gcloud
+    correlationHeader: "X-Request-ID"
+    batchSize: 512
+    scheduledDelayMs: 5000
+    reportHealthChecks: true
+    reportLogs: false
+    reportMessageMetrics: true
+    gcloud:
+      projectId: "your-gcp-project-id"
+      logName: "gravitee-api-gateway"
+      # credentialsFile: "/path/to/sa-key.json"  # omit to use ADC
+```
+
+See [GCP Configuration](#gcp-configuration) below for IAM setup and querying guidance.
 
 ## Testing
 
@@ -75,37 +102,44 @@ Releases follow **semver tagging**. To publish a new release:
 
 ### GCP Configuration
 
-Cloud Logging does not expose a native OTLP gRPC endpoint. This plugin sends records to an **OpenTelemetry Collector**, which translates them and writes to Cloud Logging using the native API. On GKE, the collector runs as a DaemonSet or sidecar alongside the Gravitee gateway pods.
+Two modes are available for writing to Cloud Logging:
 
-#### 1. IAM — grant the collector write access
+- **GCloud mode** (`exporter: gcloud`) writes directly from the plugin via the Cloud Logging REST API. No OTel Collector is needed. This is the simpler option for GKE deployments with Workload Identity.
+- **OTLP mode** (`exporter: otlp`) sends records to an **OpenTelemetry Collector** (`otelcol-contrib`), which forwards them to Cloud Logging. Use this if you already operate a collector fleet or need multi-destination fanout.
 
-The Kubernetes service account used by the OTel Collector pod must be bound to a GCP service account with `roles/logging.logWriter`. Using Workload Identity Federation:
+Cloud Logging does not expose a native OTLP gRPC endpoint — the OTLP path requires the collector intermediary.
+
+#### 1. IAM — grant write access
+
+The service account running the pod that hosts the plugin (Gravitee gateway for `gcloud` mode; OTel Collector for `otlp` mode) must have `roles/logging.logWriter`. Using Workload Identity Federation on GKE:
 
 ```bash
-# Create a dedicated GCP service account for the collector
-gcloud iam service-accounts create otel-collector \
+# Create a GCP service account
+gcloud iam service-accounts create gravitee-reporter \
   --project=YOUR_PROJECT_ID \
-  --display-name="OTel Collector"
+  --display-name="Gravitee Reporter"
 
 # Grant Cloud Logging write permission
 gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
-  --member="serviceAccount:otel-collector@YOUR_PROJECT_ID.iam.gserviceaccount.com" \
+  --member="serviceAccount:gravitee-reporter@YOUR_PROJECT_ID.iam.gserviceaccount.com" \
   --role="roles/logging.logWriter"
 
-# Bind the GCP service account to the Kubernetes service account (Workload Identity)
+# Bind to the Kubernetes service account (Workload Identity)
 gcloud iam service-accounts add-iam-policy-binding \
-  otel-collector@YOUR_PROJECT_ID.iam.gserviceaccount.com \
+  gravitee-reporter@YOUR_PROJECT_ID.iam.gserviceaccount.com \
   --role="roles/iam.workloadIdentityUser" \
-  --member="serviceAccount:YOUR_PROJECT_ID.svc.id.goog[YOUR_NAMESPACE/otel-collector]"
+  --member="serviceAccount:YOUR_PROJECT_ID.svc.id.goog[YOUR_NAMESPACE/gravitee-reporter]"
 ```
 
 Then annotate the Kubernetes service account:
 
 ```bash
-kubectl annotate serviceaccount otel-collector \
+kubectl annotate serviceaccount gravitee-reporter \
   --namespace=YOUR_NAMESPACE \
-  iam.gke.io/gcp-service-account=otel-collector@YOUR_PROJECT_ID.iam.gserviceaccount.com
+  iam.gke.io/gcp-service-account=gravitee-reporter@YOUR_PROJECT_ID.iam.gserviceaccount.com
 ```
+
+For the `otlp` mode, apply the same steps to the OTel Collector's service account instead.
 
 #### 2. OTel Collector configuration
 
@@ -148,16 +182,30 @@ The `googlecloud` exporter picks up Application Default Credentials automaticall
 
 #### 3. Gravitee gateway configuration
 
-Point the reporter at the collector's in-cluster address:
+**GCloud mode** (no Collector needed):
 
 ```yaml
 reporters:
   otel-logs:
     enabled: true
+    exporter: gcloud
+    gcloud:
+      projectId: "YOUR_PROJECT_ID"
+      logName: "gravitee-api-gateway"
+      # credentialsFile: "/path/to/sa-key.json"  # omit on GKE with Workload Identity
+```
+
+**OTLP mode** (via OTel Collector):
+
+```yaml
+reporters:
+  otel-logs:
+    enabled: true
+    exporter: otlp
     endpoint: "http://otel-collector.YOUR_NAMESPACE.svc.cluster.local:4317"
 ```
 
-Use the `http://` scheme for plain-text in-cluster traffic. Use `https://` only for TLS-terminated external endpoints.
+Use the `http://` scheme for plain-text in-cluster traffic in OTLP mode.
 
 #### 4. Querying logs in Cloud Logging
 
@@ -223,6 +271,8 @@ No payload values are ever logged. No PII or PHI in any attribute.
 
 ### Architecture
 
+**OTLP mode** (`exporter: otlp`):
+
 ```
 Gravitee Gateway (JVM)
   └── OtelLogsReporter
@@ -236,7 +286,20 @@ Gravitee Gateway (JVM)
                                                   └── Grafana Alloy → Grafana Cloud Loki
 ```
 
-The OTel SDK owns batching and retry. `OtelLogWriter` is a thin wrapper around `SdkLoggerProvider` with no manual queue management.
+**GCloud mode** (`exporter: gcloud`):
+
+```
+Gravitee Gateway (JVM)
+  └── OtelLogsReporter
+        └── mapper/* → OtelLogWriter
+              └── SdkLoggerProvider
+                    └── BatchLogRecordProcessor
+                          └── GclLogRecordExporter (REST API v2, ADC/SA key)
+                                └── Google Cloud Logging
+                                      └── Grafana Alloy → Grafana Cloud Loki
+```
+
+The OTel SDK owns batching and retry in both modes. `OtelLogWriter` is a thin wrapper around `SdkLoggerProvider` with no manual queue management.
 
 ## Contributing
 

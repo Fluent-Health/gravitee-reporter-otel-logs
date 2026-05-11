@@ -22,7 +22,10 @@ public class OtelLogsReporterConfiguration {
   @Value("${reporters.otel-logs.enabled:true}")
   private boolean enabled;
 
-  @Value("${reporters.otel-logs.endpoint:https://logging.googleapis.com}")
+  @Value("${reporters.otel-logs.exporter:otlp}")
+  private String exporter;
+
+  @Value("${reporters.otel-logs.endpoint:http://localhost:4317}")
   private String endpoint;
 
   @Value("${reporters.otel-logs.correlationHeader:X-Request-ID}")
@@ -43,8 +46,21 @@ public class OtelLogsReporterConfiguration {
   @Value("${reporters.otel-logs.reportMessageMetrics:true}")
   private boolean reportMessageMetrics;
 
+  @Value("${reporters.otel-logs.gcloud.projectId:#{null}}")
+  private String gcloudProjectId;
+
+  @Value("${reporters.otel-logs.gcloud.logName:gravitee-api-gateway}")
+  private String gcloudLogName;
+
+  @Value("${reporters.otel-logs.gcloud.credentialsFile:#{null}}")
+  private String gcloudCredentialsFile;
+
   public boolean isEnabled() {
     return enabled;
+  }
+
+  public String getExporter() {
+    return exporter;
   }
 
   public String getEndpoint() {
@@ -75,9 +91,25 @@ public class OtelLogsReporterConfiguration {
     return reportMessageMetrics;
   }
 
+  public String getGcloudProjectId() {
+    return gcloudProjectId;
+  }
+
+  public String getGcloudLogName() {
+    return gcloudLogName;
+  }
+
+  public String getGcloudCredentialsFile() {
+    return gcloudCredentialsFile;
+  }
+
   // Setters used by tests (Spring uses @Value injection, not these)
   public void setEnabled(boolean enabled) {
     this.enabled = enabled;
+  }
+
+  public void setExporter(String exporter) {
+    this.exporter = exporter;
   }
 
   public void setEndpoint(String endpoint) {
@@ -106,5 +138,17 @@ public class OtelLogsReporterConfiguration {
 
   public void setReportMessageMetrics(boolean reportMessageMetrics) {
     this.reportMessageMetrics = reportMessageMetrics;
+  }
+
+  public void setGcloudProjectId(String gcloudProjectId) {
+    this.gcloudProjectId = gcloudProjectId;
+  }
+
+  public void setGcloudLogName(String gcloudLogName) {
+    this.gcloudLogName = gcloudLogName;
+  }
+
+  public void setGcloudCredentialsFile(String gcloudCredentialsFile) {
+    this.gcloudCredentialsFile = gcloudCredentialsFile;
   }
 }

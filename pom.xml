@@ -132,6 +132,12 @@
             <groupId>io.opentelemetry</groupId>
             <artifactId>opentelemetry-exporter-otlp</artifactId>
         </dependency>
+        <!-- GCL exporter mode: ADC and service-account-key credential loading -->
+        <dependency>
+            <groupId>com.google.auth</groupId>
+            <artifactId>google-auth-library-oauth2-http</artifactId>
+            <version>1.27.0</version>
+        </dependency>
 
         <!-- ===== TEST ===== -->
         <dependency>
@@ -180,15 +186,6 @@
             <groupId>org.awaitility</groupId>
             <artifactId>awaitility</artifactId>
             <version>4.2.2</version>
-            <scope>test</scope>
-        </dependency>
-        <!-- ADC auth (HTTP-only) — used by GclLogsReporterIT to obtain bearer tokens
-             for the Cloud Logging REST API. Avoids gRPC version conflicts with the
-             OTel OTLP exporter which resolves grpc-api to 1.65.1. -->
-        <dependency>
-            <groupId>com.google.auth</groupId>
-            <artifactId>google-auth-library-oauth2-http</artifactId>
-            <version>1.27.0</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
