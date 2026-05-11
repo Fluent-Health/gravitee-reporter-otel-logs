@@ -22,16 +22,19 @@ jobs:
           distribution: "temurin"
           cache: maven
 
-      - uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: ${{ vars.GHA_WIF_PROVIDER }}
-          service_account: ${{ vars.GHA_SERVICE_ACCOUNT }}
-
       - name: Unit tests
         run: mvn test -q
 
       - name: Integration tests (TestContainers — OTel Collector + Loki)
         run: mvn verify -Pintegration-test -q
+
+      # Auth is placed here so the credentials file written by the action is not
+      # present when prettier runs during `mvn test` above (prettier scans the
+      # working directory and would fail on the generated gha-creds-*.json file).
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GHA_WIF_PROVIDER }}
+          service_account: ${{ vars.GHA_SERVICE_ACCOUNT }}
 
       - name: Integration tests (Google Cloud Logging — live write + readback)
         run: mvn verify -Pgcloud-integration-test -q
