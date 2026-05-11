@@ -21,6 +21,7 @@ import io.gravitee.reporter.api.v4.log.Log;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.common.AttributesBuilder;
+import io.opentelemetry.api.logs.Severity;
 
 /**
  * Maps a Gravitee v4 {@link Log} (entrypoint request/response metadata) to an {@link OtelLogRecord}.
@@ -39,10 +40,12 @@ public class LogToLogRecordMapper {
       ? req.getMethod().name()
       : "UNKNOWN";
     String uri = (req != null) ? req.getUri() : null;
-    String path = OtelLabels.sanitizePath(uri);
+    String rawPath = OtelLabels.sanitizePath(uri);
+    String path = rawPath != null ? rawPath : "-";
     int status = (resp != null) ? resp.getStatus() : 0;
 
-    String body = method + " " + path + " → " + status;
+    String statusPart = (resp != null) ? " → " + status : "";
+    String body = method + " " + path + statusPart;
 
     AttributesBuilder b = Attributes.builder();
     if (log.getApiName() != null) b.put(
@@ -76,7 +79,7 @@ public class LogToLogRecordMapper {
       null,
       null,
       null,
-      OtelLabels.severityFromStatus(status),
+      status == 0 ? Severity.WARN : OtelLabels.severityFromStatus(status),
       log.getTimestamp() * 1_000_000L,
       body,
       b.build()

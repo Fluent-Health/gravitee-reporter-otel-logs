@@ -142,4 +142,109 @@ public final class OtelTestSupport {
       .contentLength(2048L)
       .build();
   }
+
+  /** Creates a Metrics instance with no embedded Log (so no trace headers and no request info). */
+  public static Metrics metricsWithNoLog(int status) {
+    Metrics m = new Metrics();
+    m.setApiId("api-123");
+    m.setApiName("Test API");
+    m.setHttpMethod(HttpMethod.GET);
+    m.setUri("/api/v1/users/42");
+    m.setStatus(status);
+    m.setGatewayResponseTimeMs(42L);
+    m.setTimestamp(FIXTURE_TIMESTAMP_MS);
+    // no m.setLog(...)
+    return m;
+  }
+
+  /** Creates a Metrics instance with null URI. */
+  public static Metrics metricsWithNullUri(int status) {
+    Metrics m = metrics(status);
+    m.setUri(null);
+    return m;
+  }
+
+  /** Creates a Metrics instance with null apiName. */
+  public static Metrics metricsWithNullApiName(int status) {
+    Metrics m = metrics(status);
+    m.setApiName(null);
+    return m;
+  }
+
+  /** Creates a Metrics instance with zero content lengths. */
+  public static Metrics metricsWithZeroContentLengths(int status) {
+    Metrics m = metrics(status);
+    m.setRequestContentLength(0L);
+    m.setResponseContentLength(0L);
+    return m;
+  }
+
+  /** Creates a v4 Log with null entrypoint request. */
+  public static Log logWithNullRequest(int status) {
+    HttpHeaders responseHeaders = HttpHeaders.create();
+    responseHeaders.set("Content-Type", "application/json");
+    Response entrypointResponse = new Response(status);
+    entrypointResponse.setHeaders(responseHeaders);
+    return Log.builder()
+      .apiId("api-123")
+      .apiName("Test API")
+      .entrypointRequest(null)
+      .entrypointResponse(entrypointResponse)
+      .build();
+  }
+
+  /** Creates a v4 Log with null URI (request present but URI is null). */
+  public static Log logWithNullUri(int status) {
+    HttpHeaders requestHeaders = HttpHeaders.create();
+    requestHeaders.set("Content-Type", "application/json");
+    Request entrypointRequest = new Request();
+    entrypointRequest.setMethod(HttpMethod.GET);
+    entrypointRequest.setUri(null);
+    entrypointRequest.setHeaders(requestHeaders);
+
+    HttpHeaders responseHeaders = HttpHeaders.create();
+    responseHeaders.set("Content-Type", "application/json");
+    Response entrypointResponse = new Response(status);
+    entrypointResponse.setHeaders(responseHeaders);
+
+    return Log.builder()
+      .apiId("api-123")
+      .apiName("Test API")
+      .entrypointRequest(entrypointRequest)
+      .entrypointResponse(entrypointResponse)
+      .build();
+  }
+
+  /** Creates a v4 Log with null entrypoint response. */
+  public static Log logWithNullResponse() {
+    HttpHeaders requestHeaders = HttpHeaders.create();
+    requestHeaders.set("Content-Type", "application/json");
+    Request entrypointRequest = new Request();
+    entrypointRequest.setMethod(HttpMethod.POST);
+    entrypointRequest.setUri("/api/v1/data");
+    entrypointRequest.setHeaders(requestHeaders);
+
+    return Log.builder()
+      .apiId("api-123")
+      .apiName("Test API")
+      .entrypointRequest(entrypointRequest)
+      .entrypointResponse(null)
+      .build();
+  }
+
+  /** Creates an EndpointStatus with null endpoint URL. */
+  public static EndpointStatus endpointStatusWithNullEndpoint(
+    boolean available
+  ) {
+    EndpointStatus s = EndpointStatus.builder()
+      .api("api-123")
+      .apiName("Test API")
+      .endpoint(null)
+      .available(available)
+      .responseTime(100L)
+      .build();
+    s.setAvailable(available);
+    s.setResponseTime(100L);
+    return s;
+  }
 }

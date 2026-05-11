@@ -51,7 +51,8 @@ public class MetricsToLogRecordMapper {
     String method = m.getHttpMethod() != null
       ? m.getHttpMethod().name()
       : "UNKNOWN";
-    String path = OtelLabels.sanitizePath(m.getUri());
+    String rawPath = OtelLabels.sanitizePath(m.getUri());
+    String path = rawPath != null ? rawPath : "-";
     String body = method + " " + path + " → " + m.getStatus();
 
     return new OtelLogRecord(
@@ -93,6 +94,8 @@ public class MetricsToLogRecordMapper {
     return null;
   }
 
+  // Returns null when only the correlation header is present (no span context in that header).
+  // Callers produce a traceId-only OtelLogRecord, which OtelLogWriter handles by omitting span context.
   private String resolveSpanId(HttpHeaders headers) {
     if (headers == null) return null;
     String traceparent = headers.get("traceparent");

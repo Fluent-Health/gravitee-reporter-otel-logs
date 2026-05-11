@@ -103,4 +103,32 @@ class MessageMetricsToLogRecordMapperTest {
       record.attributes().get(AttributeKey.longKey("message.content_length"))
     ).isNull();
   }
+
+  @Test
+  void pluralErrorsInBody() {
+    var mm = MessageMetrics.builder()
+      .apiId("api-123")
+      .apiName("Test API")
+      .count(5L)
+      .errorCount(2L)
+      .build();
+    var record = mapper.map(mm);
+    assertThat(record.body()).contains("2 errors");
+  }
+
+  @Test
+  void zeroMessagesProducesValidRecord() {
+    var mm = MessageMetrics.builder()
+      .apiId("api-123")
+      .apiName("Test API")
+      .count(0L)
+      .errorCount(0L)
+      .build();
+    var record = mapper.map(mm);
+    assertThat(record.body()).contains("0");
+    assertThat(record.severity()).isEqualTo(Severity.INFO);
+    assertThat(
+      record.attributes().get(AttributeKey.longKey("message.count"))
+    ).isEqualTo(0L);
+  }
 }

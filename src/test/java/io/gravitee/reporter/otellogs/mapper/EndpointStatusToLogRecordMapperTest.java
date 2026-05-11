@@ -72,4 +72,15 @@ class EndpointStatusToLogRecordMapperTest {
       record.attributes().get(AttributeKey.longKey("endpoint.response_time_ms"))
     ).isEqualTo(100L);
   }
+
+  @Test
+  void nullEndpointUrlProducesUnknownBody() {
+    var record = mapper.map(
+      OtelTestSupport.endpointStatusWithNullEndpoint(true)
+    );
+    assertThat(record.body()).contains("unknown");
+    assertThat(
+      record.attributes().get(AttributeKey.stringKey("endpoint.url"))
+    ).isEqualTo("unknown");
+  }
 }

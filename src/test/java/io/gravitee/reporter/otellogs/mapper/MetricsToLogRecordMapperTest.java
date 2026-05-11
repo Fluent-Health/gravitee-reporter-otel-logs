@@ -179,4 +179,51 @@ class MetricsToLogRecordMapperTest {
       OtelTestSupport.FIXTURE_TIMESTAMP_MS * 1_000_000L
     );
   }
+
+  @Test
+  void correlationHeaderAloneProducesNullSpanId() {
+    var m = OtelTestSupport.metricsWithHeaders(
+      200,
+      Map.of("X-Request-ID", "550e8400-e29b-41d4-a716-446655440000")
+    );
+    var record = mapper.map(m);
+    assertThat(record.traceId()).isEqualTo("550e8400e29b41d4a716446655440000");
+    assertThat(record.spanId()).isNull();
+  }
+
+  @Test
+  void metricsWithNoEmbeddedLog_traceFallsBackToNull() {
+    var record = mapper.map(OtelTestSupport.metricsWithNoLog(200));
+    assertThat(record.traceId()).isNull();
+    assertThat(record.spanId()).isNull();
+  }
+
+  @Test
+  void nullUriProducesDashInBody() {
+    var record = mapper.map(OtelTestSupport.metricsWithNullUri(200));
+    assertThat(record.body()).isEqualTo("GET - → 200");
+  }
+
+  @Test
+  void nullApiNameIsOmittedFromAttributes() {
+    var record = mapper.map(OtelTestSupport.metricsWithNullApiName(200));
+    assertThat(
+      record.attributes().get(AttributeKey.stringKey("api.name"))
+    ).isNull();
+  }
+
+  @Test
+  void zeroContentLengthsOmitted() {
+    var record = mapper.map(OtelTestSupport.metricsWithZeroContentLengths(200));
+    assertThat(
+      record
+        .attributes()
+        .get(AttributeKey.longKey("entrypoint.request.content_length"))
+    ).isNull();
+    assertThat(
+      record
+        .attributes()
+        .get(AttributeKey.longKey("entrypoint.response.content_length"))
+    ).isNull();
+  }
 }

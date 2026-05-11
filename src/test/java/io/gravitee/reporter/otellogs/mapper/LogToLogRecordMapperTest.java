@@ -16,6 +16,7 @@
 package io.gravitee.reporter.otellogs.mapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNoException;
 
 import io.gravitee.reporter.otellogs.OtelTestSupport;
 import io.opentelemetry.api.common.AttributeKey;
@@ -92,5 +93,35 @@ class LogToLogRecordMapperTest {
         .attributes()
         .get(AttributeKey.longKey("log.response.headers_count"))
     ).isEqualTo(1L);
+  }
+
+  @Test
+  void nullResponseProducesBodyWithoutArrow() {
+    var record = mapper.map(OtelTestSupport.logWithNullResponse());
+    assertThat(record.body()).isEqualTo("POST /api/v1/data");
+  }
+
+  @Test
+  void nullResponseProducesSeverityWarn() {
+    var record = mapper.map(OtelTestSupport.logWithNullResponse());
+    assertThat(record.severity()).isEqualTo(Severity.WARN);
+  }
+
+  @Test
+  void nullEntrypointRequestProducesNoNpe() {
+    assertThatNoException().isThrownBy(() ->
+      mapper.map(OtelTestSupport.logWithNullRequest(200))
+    );
+    var record = mapper.map(OtelTestSupport.logWithNullRequest(200));
+    assertThat(
+      record.attributes().get(AttributeKey.longKey("log.request.headers_count"))
+    ).isNull();
+  }
+
+  @Test
+  void nullUriProducesDashInBody() {
+    var record = mapper.map(OtelTestSupport.logWithNullUri(200));
+    assertThat(record.body()).doesNotContain("null");
+    assertThat(record.body()).contains("-");
   }
 }
