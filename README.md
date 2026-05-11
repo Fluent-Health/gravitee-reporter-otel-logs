@@ -56,15 +56,15 @@ Routes records through an OpenTelemetry Collector that translates them to Cloud 
 ```yaml
 reporters:
   otel-logs:
-    enabled: true
-    exporter: otlp
+    enabled: true                          # default
+    exporter: otlp                         # default
     endpoint: "http://otel-collector.YOUR_NAMESPACE.svc.cluster.local:4317"
-    correlationHeader: "X-Request-ID"
-    batchSize: 512
-    scheduledDelayMs: 5000
-    reportHealthChecks: true
-    reportLogs: false
-    reportMessageMetrics: true
+    correlationHeader: "X-Request-ID"      # default
+    batchSize: 512                         # default
+    scheduledDelayMs: 5000                 # default
+    reportHealthChecks: true               # default
+    reportLogs: false                      # default
+    reportMessageMetrics: true             # default
 ```
 
 The `endpoint` must point to an OTel Collector that accepts OTLP gRPC. Use `http://` for plain-text in-cluster traffic. See [OTel Collector configuration](#2-otel-collector-configuration) below for a ready-to-use collector config.
@@ -76,18 +76,18 @@ Writes directly to Cloud Logging via the REST API. No OTel Collector is needed. 
 ```yaml
 reporters:
   otel-logs:
-    enabled: true
+    enabled: true                          # default
     exporter: gcloud
-    correlationHeader: "X-Request-ID"
-    batchSize: 512
-    scheduledDelayMs: 5000
-    reportHealthChecks: true
-    reportLogs: false
-    reportMessageMetrics: true
+    correlationHeader: "X-Request-ID"      # default
+    batchSize: 512                         # default
+    scheduledDelayMs: 5000                 # default
+    reportHealthChecks: true               # default
+    reportLogs: false                      # default
+    reportMessageMetrics: true             # default
     gcloud:
       projectId: "your-gcp-project-id"
-      logName: "gravitee-api-gateway"
-      # credentialsFile: "/path/to/sa-key.json"  # omit on GKE with Workload Identity
+      logName: "gravitee-api-gateway"      # default
+      # credentialsFile: "/path/to/sa-key.json"  # omit to use ADC (default on GKE)
 ```
 
 To use a service-account key file instead of ADC (e.g. on a non-GKE VM):
@@ -282,6 +282,53 @@ Attributes by event type:
 **Log (request/response metadata):** `api.name`, `api.id`, `http.method`, `http.status`, `log.request.headers_count`, `log.response.headers_count`, `log.request.content_length`, `log.response.content_length` — disabled by default (`reportLogs: false`)
 
 No payload values are ever logged. No PII or PHI in any attribute.
+
+### Sentry Integration
+
+When a Sentry SDK is installed in the client application, it automatically attaches a `sentry-trace` header to outgoing HTTP requests. The plugin reads this header and records it alongside the standard OTel trace context, enabling you to navigate directly from a Sentry issue to the corresponding gateway log entry — and vice versa.
+
+#### How it works
+
+The `sentry-trace` header format is `{traceId}-{spanId}-{sampled}`, e.g.:
+
+```
+sentry-trace: 4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-1
+```
+
+The plugin parses this and emits two additional attributes on every matching log record:
+
+| Attribute | Value |
+|---|---|
+| `sentry.trace_id` | The 32-hex Sentry trace ID |
+| `sentry.span_id` | The 16-hex Sentry span ID |
+
+These are stored separately from the OTel `traceId`/`spanId` fields. The OTel fields come from the `X-Request-ID` or W3C `traceparent` headers and drive Cloud Logging's native trace linking (`trace="projects/.../traces/..."`). The Sentry fields are plain log attributes, queryable in both Cloud Logging and Loki.
+
+The header is only parsed — its value is never used to override the OTel trace context. Both systems get their own identifiers on the same record.
+
+#### Querying by Sentry trace ID
+
+**Cloud Logging:**
+
+```
+logName="projects/YOUR_PROJECT_ID/logs/gravitee-api-gateway"
+jsonPayload.sentry.trace_id="4bf92f3577b34da6a3ce929d0e0e4736"
+```
+
+**Loki (LogQL):**
+
+```logql
+{job="gravitee/gravitee-api-gateway"} | json | sentry_trace_id=`4bf92f3577b34da6a3ce929d0e0e4736`
+```
+
+Note: LogQL flattens nested JSON keys with underscores, so `sentry.trace_id` becomes `sentry_trace_id`.
+
+#### Workflow
+
+1. A Sentry error fires for a user request.
+2. Copy the trace ID from the Sentry issue breadcrumb or the `sentry-trace` value in Sentry's network tab.
+3. Paste it into the Cloud Logging or Loki query above.
+4. The matching gateway log shows the full request context: API name, HTTP status, latency, upstream endpoint, and the OTel `traceId` for Cloud Trace correlation.
 
 ### Architecture
 
