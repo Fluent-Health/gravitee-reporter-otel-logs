@@ -1,0 +1,12 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: gravitee-reporter-otel-logs
+  description: Gravitee APIM reporter plugin that emits structured per-request log records via OpenTelemetry OTLP to Google Cloud Logging.
+  annotations:
+    github.com/project-slug: Fluent-Health/gravitee-reporter-otel-logs
+    fluentinhealth.com/oss: pending
+spec:
+  type: library
+  lifecycle: production
+  owner: group:default/backend

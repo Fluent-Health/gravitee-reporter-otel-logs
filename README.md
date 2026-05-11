@@ -154,7 +154,7 @@ Point the reporter at the collector's in-cluster address:
 reporters:
   otel-logs:
     enabled: true
-    endpoint: "http://otel-collector.observability.svc.cluster.local:4317"
+    endpoint: "http://otel-collector.YOUR_NAMESPACE.svc.cluster.local:4317"
 ```
 
 Use the `http://` scheme for plain-text in-cluster traffic. Use `https://` only for TLS-terminated external endpoints.
