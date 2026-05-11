@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<licensePluginReport goal="CHECK" timestamp="1778508916793">
+<licensePluginReport goal="CHECK" timestamp="1778513383540">
     <module artifactId="gravitee-reporter-otel-logs" groupId="io.gravitee.reporter" version="1.0.0-SNAPSHOT"/>
     <files>
         <file path="pom.xml" result="PRESENT"/>
@@ -15,6 +15,7 @@
         <file path="src/main/java/io/gravitee/reporter/otellogs/writer/OtelLogWriter.java" result="PRESENT"/>
         <file path="src/test/java/io/gravitee/reporter/otellogs/OtelLogsReporterTest.java" result="PRESENT"/>
         <file path="src/test/java/io/gravitee/reporter/otellogs/OtelTestSupport.java" result="PRESENT"/>
+        <file path="src/test/java/io/gravitee/reporter/otellogs/integration/GclLogsReporterIT.java" result="PRESENT"/>
         <file path="src/test/java/io/gravitee/reporter/otellogs/integration/OtelLogsReporterIT.java" result="PRESENT"/>
         <file path="src/test/java/io/gravitee/reporter/otellogs/mapper/EndpointStatusToLogRecordMapperTest.java" result="PRESENT"/>
         <file path="src/test/java/io/gravitee/reporter/otellogs/mapper/LogToLogRecordMapperTest.java" result="PRESENT"/>
