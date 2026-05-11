@@ -123,6 +123,12 @@ class OtelLogWriterTest {
     var record = records.get(0);
     // No span context should be set — span context is invalid (all zeros)
     assertThat(record.getSpanContext().isValid()).isFalse();
+    // But the traceId IS preserved as an attribute so it is queryable in the log backend.
+    assertThat(
+      record
+        .getAttributes()
+        .get(AttributeKey.stringKey("http.request.trace_id"))
+    ).isEqualTo(traceId);
   }
 
   @Test
