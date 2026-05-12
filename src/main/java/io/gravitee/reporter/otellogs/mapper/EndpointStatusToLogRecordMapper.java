@@ -30,18 +30,18 @@ public class EndpointStatusToLogRecordMapper {
 
     AttributesBuilder b = Attributes.builder();
     if (es.getApiName() != null) b.put(
-      AttributeKey.stringKey("api.name"),
+      AttributeKey.stringKey("api_name"),
       es.getApiName()
     );
     // EndpointStatus uses getApi() for the API identifier (not getApiId())
     if (es.getApi() != null) b.put(
-      AttributeKey.stringKey("api.id"),
+      AttributeKey.stringKey("api_id"),
       es.getApi()
     );
-    b.put(AttributeKey.stringKey("endpoint.url"), endpoint);
-    b.put(AttributeKey.stringKey("endpoint.status"), statusLabel);
+    b.put(AttributeKey.stringKey("endpoint_url"), endpoint);
+    b.put(AttributeKey.stringKey("endpoint_status"), statusLabel);
     b.put(
-      AttributeKey.longKey("endpoint.response_time_ms"),
+      AttributeKey.longKey("endpoint_response_time_ms"),
       es.getResponseTime()
     );
 

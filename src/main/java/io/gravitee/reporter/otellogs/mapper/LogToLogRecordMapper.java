@@ -49,27 +49,27 @@ public class LogToLogRecordMapper {
 
     AttributesBuilder b = Attributes.builder();
     if (log.getApiName() != null) b.put(
-      AttributeKey.stringKey("api.name"),
+      AttributeKey.stringKey("api_name"),
       log.getApiName()
     );
     if (log.getApiId() != null) b.put(
-      AttributeKey.stringKey("api.id"),
+      AttributeKey.stringKey("api_id"),
       log.getApiId()
     );
     if (req != null && req.getMethod() != null) b.put(
-      AttributeKey.stringKey("http.method"),
+      AttributeKey.stringKey("http_method"),
       req.getMethod().name()
     );
-    if (status > 0) b.put(AttributeKey.longKey("http.status"), (long) status);
+    if (status > 0) b.put(AttributeKey.longKey("http_status"), (long) status);
     if (req != null && req.getHeaders() != null) {
       b.put(
-        AttributeKey.longKey("log.request.headers_count"),
+        AttributeKey.longKey("log_request_headers_count"),
         (long) req.getHeaders().size()
       );
     }
     if (resp != null && resp.getHeaders() != null) {
       b.put(
-        AttributeKey.longKey("log.response.headers_count"),
+        AttributeKey.longKey("log_response_headers_count"),
         (long) resp.getHeaders().size()
       );
     }

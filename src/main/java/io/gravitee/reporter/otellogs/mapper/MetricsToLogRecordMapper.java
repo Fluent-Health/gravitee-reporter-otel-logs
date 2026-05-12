@@ -109,69 +109,63 @@ public class MetricsToLogRecordMapper {
   private Attributes buildAttributes(Metrics m) {
     AttributesBuilder b = Attributes.builder();
     if (m.getApiName() != null) b.put(
-      AttributeKey.stringKey("api.name"),
+      AttributeKey.stringKey("api_name"),
       m.getApiName()
     );
     if (m.getApiId() != null) b.put(
-      AttributeKey.stringKey("api.id"),
+      AttributeKey.stringKey("api_id"),
       m.getApiId()
     );
     if (m.getApiType() != null) b.put(
-      AttributeKey.stringKey("api.type"),
+      AttributeKey.stringKey("api_type"),
       m.getApiType()
     );
     if (m.getHttpMethod() != null) b.put(
-      AttributeKey.stringKey("http.method"),
+      AttributeKey.stringKey("http_method"),
       m.getHttpMethod().name()
     );
-    b.put(AttributeKey.longKey("http.status"), (long) m.getStatus());
+    b.put(AttributeKey.longKey("http_status"), (long) m.getStatus());
     b.put(
-      AttributeKey.longKey("http.latency_ms"),
+      AttributeKey.longKey("http_latency_ms"),
       m.getGatewayResponseTimeMs()
     );
     b.put(
-      AttributeKey.longKey("gateway.proxy_latency_ms"),
+      AttributeKey.longKey("gateway_proxy_latency_ms"),
       m.getGatewayLatencyMs()
     );
     b.put(
-      AttributeKey.longKey("gateway.api_latency_ms"),
+      AttributeKey.longKey("gateway_api_latency_ms"),
       m.getEndpointResponseTimeMs()
     );
     if (m.getEndpoint() != null) {
       b.put(
-        AttributeKey.stringKey("upstream.endpoint"),
+        AttributeKey.stringKey("upstream_endpoint"),
         OtelLabels.sanitizePath(m.getEndpoint())
       );
     }
     if (m.getRequestContentLength() > 0) {
       b.put(
-        AttributeKey.longKey("entrypoint.request.content_length"),
+        AttributeKey.longKey("entrypoint_request_content_length"),
         m.getRequestContentLength()
       );
     }
     if (m.getResponseContentLength() > 0) {
       b.put(
-        AttributeKey.longKey("entrypoint.response.content_length"),
+        AttributeKey.longKey("entrypoint_response_content_length"),
         m.getResponseContentLength()
       );
     }
     if (m.getApplicationId() != null) {
-      b.put(
-        AttributeKey.stringKey("context.application"),
-        m.getApplicationId()
-      );
+      b.put(AttributeKey.stringKey("application_id"), m.getApplicationId());
     }
     if (m.getPlanId() != null) {
-      b.put(AttributeKey.stringKey("context.plan"), m.getPlanId());
+      b.put(AttributeKey.stringKey("plan_id"), m.getPlanId());
     }
     if (m.getSubscriptionId() != null) {
-      b.put(
-        AttributeKey.stringKey("context.subscription"),
-        m.getSubscriptionId()
-      );
+      b.put(AttributeKey.stringKey("subscription_id"), m.getSubscriptionId());
     }
     if (m.getErrorMessage() != null) {
-      b.put(AttributeKey.stringKey("error.message"), m.getErrorMessage());
+      b.put(AttributeKey.stringKey("error_message"), m.getErrorMessage());
     }
     return b.build();
   }

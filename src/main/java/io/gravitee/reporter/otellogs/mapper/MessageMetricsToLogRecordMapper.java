@@ -35,21 +35,21 @@ public class MessageMetricsToLogRecordMapper {
 
     AttributesBuilder b = Attributes.builder();
     if (mm.getApiName() != null) b.put(
-      AttributeKey.stringKey("api.name"),
+      AttributeKey.stringKey("api_name"),
       mm.getApiName()
     );
     if (mm.getApiId() != null) b.put(
-      AttributeKey.stringKey("api.id"),
+      AttributeKey.stringKey("api_id"),
       mm.getApiId()
     );
-    b.put(AttributeKey.longKey("message.count"), count);
-    b.put(AttributeKey.longKey("message.error_count"), errorCount);
+    b.put(AttributeKey.longKey("message_count"), count);
+    b.put(AttributeKey.longKey("message_error_count"), errorCount);
     // MessageMetrics exposes a single content-length field (not separate in/out byte counts).
     // The spec attributes message.bytes_in / message.bytes_out are not individually available
     // in this API version; map the available field to message.content_length instead.
     if (mm.getContentLength() > 0) {
       b.put(
-        AttributeKey.longKey("message.content_length"),
+        AttributeKey.longKey("message_content_length"),
         mm.getContentLength()
       );
     }
