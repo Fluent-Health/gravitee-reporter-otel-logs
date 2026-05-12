@@ -21,7 +21,7 @@ metadata:
   description: Gravitee APIM reporter plugin that emits structured per-request log records via OpenTelemetry OTLP to Google Cloud Logging.
   annotations:
     github.com/project-slug: Fluent-Health/gravitee-reporter-otel-logs
-    fluentinhealth.com/oss: pending
+    fluentinhealth.com/oss: published
 spec:
   type: library
   lifecycle: production
