@@ -1,8 +1,24 @@
 <configuration>
   <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
-    <encoder><pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern></encoder>
+    <encoder><pattern>%d{HH:mm:ss.SSS} %-5level %logger{36} - %msg%n</pattern></encoder>
   </appender>
+
   <root level="WARN"><appender-ref ref="STDOUT"/></root>
-  <logger name="io.gravitee.reporter.otellogs" level="DEBUG"/>
+
+  <!-- Our own plugin: WARN keeps test output clean. The unit suite exercises
+       reporter start/stop hundreds of times and the INFO/DEBUG lifecycle
+       lines drown out everything else. Production logback config is
+       unaffected. Bump to DEBUG locally when diagnosing a specific test. -->
+  <logger name="io.gravitee.reporter.otellogs" level="WARN"/>
+
+  <!-- testcontainers lifecycle (image pull, container start/stop, readiness): keep visible. -->
+  <logger name="org.testcontainers" level="INFO"/>
+  <!-- Docker API chatter is noisy; quiet it. -->
+  <logger name="com.github.dockerjava" level="WARN"/>
+  <logger name="org.testcontainers.shaded" level="WARN"/>
+
+  <!-- Container log forwarders. The E2E test uses filteredLogConsumer() to
+       drop most container output before it reaches these loggers; leaving them
+       at INFO so what does come through is visible. -->
   <logger name="tc" level="INFO"/>
 </configuration>
