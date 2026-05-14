@@ -159,9 +159,7 @@ class OtelLogsReporterManualIT {
         }
       })
       .until(() ->
-        queryLoki(
-          "{job=\"gravitee-otellogs\"} |= \"users\""
-        ).contains("users")
+        queryLoki("{job=\"gravitee-otellogs\"} |= \"users\"").contains("users")
       );
   }
 
@@ -186,9 +184,7 @@ class OtelLogsReporterManualIT {
         }
       })
       .until(() ->
-        queryLoki("{job=\"gravitee-otellogs\"} |= \"500\"").contains(
-          "500"
-        )
+        queryLoki("{job=\"gravitee-otellogs\"} |= \"500\"").contains("500")
       );
   }
 
@@ -220,9 +216,9 @@ class OtelLogsReporterManualIT {
         }
       })
       .until(() ->
-        queryLoki(
-          "{job=\"gravitee-otellogs\"} |= \"550e8400\""
-        ).contains("550e8400")
+        queryLoki("{job=\"gravitee-otellogs\"} |= \"550e8400\"").contains(
+          "550e8400"
+        )
       );
   }
 
@@ -247,9 +243,7 @@ class OtelLogsReporterManualIT {
         }
       })
       .until(() ->
-        queryLoki("{job=\"gravitee-otellogs\"} |= \"DOWN\"").contains(
-          "DOWN"
-        )
+        queryLoki("{job=\"gravitee-otellogs\"} |= \"DOWN\"").contains("DOWN")
       );
   }
 
@@ -282,9 +276,9 @@ class OtelLogsReporterManualIT {
         }
       })
       .until(() ->
-        queryLoki(
-          "{job=\"gravitee-otellogs\"} |= \"771a43a4\""
-        ).contains("771a43a4")
+        queryLoki("{job=\"gravitee-otellogs\"} |= \"771a43a4\"").contains(
+          "771a43a4"
+        )
       );
   }
 
@@ -319,9 +313,9 @@ class OtelLogsReporterManualIT {
         }
       })
       .until(() ->
-        queryLoki(
-          "{job=\"gravitee-otellogs\"} |= \"4bf92f35\""
-        ).contains("4bf92f35")
+        queryLoki("{job=\"gravitee-otellogs\"} |= \"4bf92f35\"").contains(
+          "4bf92f35"
+        )
       );
   }
 
