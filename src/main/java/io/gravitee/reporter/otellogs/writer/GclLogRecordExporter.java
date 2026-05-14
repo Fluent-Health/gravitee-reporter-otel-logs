@@ -17,6 +17,7 @@ package io.gravitee.reporter.otellogs.writer;
 
 import com.google.auth.oauth2.GoogleCredentials;
 import com.google.auth.oauth2.ServiceAccountCredentials;
+import com.google.gson.Gson;
 import io.opentelemetry.api.logs.Severity;
 import io.opentelemetry.sdk.common.CompletableResultCode;
 import io.opentelemetry.sdk.logs.data.LogRecordData;
@@ -30,7 +31,11 @@ import java.net.http.HttpResponse;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.LinkedHashMap;
+import java.util.Locale;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -57,11 +62,13 @@ public class GclLogRecordExporter implements LogRecordExporter {
   private static final DateTimeFormatter RFC3339 = DateTimeFormatter.ofPattern(
     "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'"
   ).withZone(ZoneOffset.UTC);
+  private static final Gson GSON = new Gson();
 
   private final String projectId;
   private final String logName;
   private final GoogleCredentials credentials;
   private final HttpClient http;
+  private final GcpResource resource;
 
   public GclLogRecordExporter(
     String projectId,
@@ -72,6 +79,12 @@ public class GclLogRecordExporter implements LogRecordExporter {
     this.logName = logName;
     this.credentials = loadCredentials(credentialsFile);
     this.http = HttpClient.newHttpClient();
+    this.resource = GcpResource.detect(projectId);
+    log.info(
+      "GCL logs MonitoredResource: type={} labels={}",
+      resource.type(),
+      resource.labels()
+    );
   }
 
   @Override
@@ -80,7 +93,7 @@ public class GclLogRecordExporter implements LogRecordExporter {
       credentials.refreshIfExpired();
       String token = credentials.getAccessToken().getTokenValue();
 
-      String body = buildRequestBody(records);
+      String body = buildRequestBody(projectId, logName, resource, records);
 
       var request = HttpRequest.newBuilder()
         .uri(URI.create(ENTRIES_WRITE_URL))
@@ -117,72 +130,105 @@ public class GclLogRecordExporter implements LogRecordExporter {
 
   // ── Helpers ──────────────────────────────────────────────────────────────
 
-  private String buildRequestBody(Collection<LogRecordData> records) {
-    var entries = new StringBuilder("[");
-    boolean first = true;
+  // Package-private + static so it can be unit-tested without GCP credentials.
+  static String buildRequestBody(
+    String projectId,
+    String logName,
+    GcpResource resource,
+    Collection<LogRecordData> records
+  ) {
+    var entries = new ArrayList<Map<String, Object>>(records.size());
     for (var rec : records) {
-      if (!first) entries.append(",");
-      first = false;
-
-      long nanos = rec.getTimestampEpochNanos();
-      String timestamp = RFC3339.format(
-        Instant.ofEpochSecond(nanos / 1_000_000_000L, nanos % 1_000_000_000L)
-      );
-
-      entries.append("{");
-      entries.append("\"timestamp\":\"").append(timestamp).append("\",");
-      entries
-        .append("\"severity\":\"")
-        .append(mapSeverity(rec.getSeverity()))
-        .append("\",");
-
-      // Use jsonPayload to preserve all OTel attributes as structured fields
-      entries.append("\"jsonPayload\":{");
-      entries
-        .append("\"message\":\"")
-        .append(escapeJson(rec.getBody().asString()))
-        .append("\"");
-
-      rec
-        .getAttributes()
-        .forEach((key, value) -> {
-          entries
-            .append(",\"")
-            .append(escapeJson(key.getKey()))
-            .append("\":\"")
-            .append(escapeJson(String.valueOf(value)))
-            .append("\"");
-        });
-
-      entries.append("}");
-
-      var spanCtx = rec.getSpanContext();
-      if (spanCtx.isValid()) {
-        entries
-          .append(",\"trace\":\"projects/")
-          .append(projectId)
-          .append("/traces/")
-          .append(spanCtx.getTraceId())
-          .append("\"");
-        entries
-          .append(",\"spanId\":\"")
-          .append(spanCtx.getSpanId())
-          .append("\"");
-        entries.append(",\"traceSampled\":true");
-      }
-
-      entries.append("}");
+      entries.add(buildEntry(projectId, rec));
     }
-    entries.append("]");
 
-    return (
-      """
-      {"logName":"projects/%s/logs/%s","resource":{"type":"global"},"entries":%s}
-      """.formatted(projectId, logName, entries)
-    ).strip();
+    var root = new LinkedHashMap<String, Object>();
+    root.put("logName", "projects/" + projectId + "/logs/" + logName);
+    root.put("resource", resourceMap(resource));
+    root.put("entries", entries);
+    return GSON.toJson(root);
   }
 
-  private String mapSeverity(Severity severity) {
+  private static Map<String, Object> resourceMap(GcpResource resource) {
+    var m = new LinkedHashMap<String, Object>();
+    m.put("type", resource.type());
+    if (!resource.labels().isEmpty()) {
+      m.put("labels", resource.labels());
+    }
+    return m;
+  }
+
+  private static Map<String, Object> buildEntry(
+    String projectId,
+    LogRecordData rec
+  ) {
+    long nanos = rec.getTimestampEpochNanos();
+    String timestamp = RFC3339.format(
+      Instant.ofEpochSecond(nanos / 1_000_000_000L, nanos % 1_000_000_000L)
+    );
+
+    // Bucket attributes once: HTTP request fields and Sentry labels are promoted
+    // to top-level LogEntry fields so Cloud Logging renders them natively.
+    var httpRequest = new LinkedHashMap<String, Object>();
+    var labels = new LinkedHashMap<String, String>();
+    var payload = new LinkedHashMap<String, Object>();
+    payload.put("message", rec.getBody().asString());
+
+    rec
+      .getAttributes()
+      .forEach((key, value) -> {
+        switch (key.getKey()) {
+          case "http.method" -> httpRequest.put("requestMethod", value);
+          case "http.status" -> httpRequest.put("status", value);
+          case "http.latency_ms" -> httpRequest.put(
+            "latency",
+            formatLatency(((Number) value).longValue())
+          );
+          case "entrypoint.request.content_length" -> httpRequest.put(
+            "requestSize",
+            String.valueOf(value)
+          );
+          case "entrypoint.response.content_length" -> httpRequest.put(
+            "responseSize",
+            String.valueOf(value)
+          );
+          case "sentry.trace_id" -> labels.put(
+            "sentry_trace_id",
+            String.valueOf(value)
+          );
+          case "sentry.span_id" -> labels.put(
+            "sentry_span_id",
+            String.valueOf(value)
+          );
+          default -> payload.put(key.getKey(), value);
+        }
+      });
+
+    var entry = new LinkedHashMap<String, Object>();
+    entry.put("timestamp", timestamp);
+    entry.put("severity", mapSeverity(rec.getSeverity()));
+    if (!httpRequest.isEmpty()) entry.put("httpRequest", httpRequest);
+    if (!labels.isEmpty()) entry.put("labels", labels);
+    entry.put("jsonPayload", payload);
+
+    var spanCtx = rec.getSpanContext();
+    if (spanCtx.isValid()) {
+      entry.put(
+        "trace",
+        "projects/" + projectId + "/traces/" + spanCtx.getTraceId()
+      );
+      entry.put("spanId", spanCtx.getSpanId());
+      entry.put("traceSampled", true);
+    }
+    return entry;
+  }
+
+  // GCL HttpRequest.latency is a Duration encoded as "<seconds>.<nanos>s".
+  private static String formatLatency(long ms) {
+    return String.format(Locale.ROOT, "%d.%03ds", ms / 1000, ms % 1000);
+  }
+
+  private static String mapSeverity(Severity severity) {
     return switch (severity) {
       case
         TRACE,
@@ -206,16 +252,6 @@ public class GclLogRecordExporter implements LogRecordExporter {
         FATAL4 -> "ERROR";
       default -> "DEFAULT";
     };
-  }
-
-  private String escapeJson(String s) {
-    if (s == null) return "";
-    return s
-      .replace("\\", "\\\\")
-      .replace("\"", "\\\"")
-      .replace("\n", "\\n")
-      .replace("\r", "\\r")
-      .replace("\t", "\\t");
   }
 
   private static GoogleCredentials loadCredentials(String credentialsFile) {

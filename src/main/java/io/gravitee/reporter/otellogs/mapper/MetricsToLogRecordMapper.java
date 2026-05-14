@@ -119,10 +119,6 @@ public class MetricsToLogRecordMapper {
       AttributeKey.stringKey("api.name"),
       m.getApiName()
     );
-    if (m.getApiId() != null) b.put(
-      AttributeKey.stringKey("api.id"),
-      m.getApiId()
-    );
     if (m.getApiType() != null) b.put(
       AttributeKey.stringKey("api.type"),
       m.getApiType()

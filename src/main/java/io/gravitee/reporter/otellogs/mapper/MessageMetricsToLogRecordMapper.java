@@ -38,10 +38,6 @@ public class MessageMetricsToLogRecordMapper {
       AttributeKey.stringKey("api.name"),
       mm.getApiName()
     );
-    if (mm.getApiId() != null) b.put(
-      AttributeKey.stringKey("api.id"),
-      mm.getApiId()
-    );
     b.put(AttributeKey.longKey("message.count"), count);
     b.put(AttributeKey.longKey("message.error_count"), errorCount);
     // MessageMetrics exposes a single content-length field (not separate in/out byte counts).
