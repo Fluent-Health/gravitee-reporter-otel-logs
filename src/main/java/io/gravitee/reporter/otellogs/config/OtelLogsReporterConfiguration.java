@@ -19,40 +19,40 @@ import org.springframework.beans.factory.annotation.Value;
 
 public class OtelLogsReporterConfiguration {
 
-  @Value("${reporters.otel-logs.enabled:true}")
+  @Value("${reporters.otellogs.enabled:true}")
   private boolean enabled;
 
-  @Value("${reporters.otel-logs.exporter:otlp}")
+  @Value("${reporters.otellogs.exporter:otlp}")
   private String exporter;
 
-  @Value("${reporters.otel-logs.endpoint:http://localhost:4317}")
+  @Value("${reporters.otellogs.endpoint:http://localhost:4317}")
   private String endpoint;
 
-  @Value("${reporters.otel-logs.correlationHeader:X-Request-ID}")
+  @Value("${reporters.otellogs.correlationHeader:X-Request-ID}")
   private String correlationHeader;
 
-  @Value("${reporters.otel-logs.batchSize:512}")
+  @Value("${reporters.otellogs.batchSize:512}")
   private int batchSize;
 
-  @Value("${reporters.otel-logs.scheduledDelayMs:5000}")
+  @Value("${reporters.otellogs.scheduledDelayMs:5000}")
   private int scheduledDelayMs;
 
-  @Value("${reporters.otel-logs.reportHealthChecks:true}")
+  @Value("${reporters.otellogs.reportHealthChecks:true}")
   private boolean reportHealthChecks;
 
-  @Value("${reporters.otel-logs.reportLogs:false}")
+  @Value("${reporters.otellogs.reportLogs:false}")
   private boolean reportLogs;
 
-  @Value("${reporters.otel-logs.reportMessageMetrics:true}")
+  @Value("${reporters.otellogs.reportMessageMetrics:true}")
   private boolean reportMessageMetrics;
 
-  @Value("${reporters.otel-logs.gcloud.projectId:#{null}}")
+  @Value("${reporters.otellogs.gcloud.projectId:#{null}}")
   private String gcloudProjectId;
 
-  @Value("${reporters.otel-logs.gcloud.logName:gravitee-api-gateway}")
+  @Value("${reporters.otellogs.gcloud.logName:gravitee-api-gateway}")
   private String gcloudLogName;
 
-  @Value("${reporters.otel-logs.gcloud.credentialsFile:#{null}}")
+  @Value("${reporters.otellogs.gcloud.credentialsFile:#{null}}")
   private String gcloudCredentialsFile;
 
   public boolean isEnabled() {

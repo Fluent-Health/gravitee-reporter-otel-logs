@@ -1,0 +1,84 @@
+#
+# Copyright © 2026 Fluent Health (https://fluentinhealth.com)
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+version: "3.8"
+
+services:
+  mongodb:
+    image: mongo:7.0
+    container_name: mongodb
+    ports:
+      - "27017:27017"
+
+  loki:
+    image: grafana/loki:3.0.0
+    container_name: loki
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+
+  collector:
+    image: otel/opentelemetry-collector-contrib:0.104.0
+    container_name: collector
+    volumes:
+      - ./src/test/resources/otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+    depends_on:
+      - loki
+
+  management-api:
+    image: graviteeio/apim-management-api:4.9.13
+    container_name: management-api
+    ports:
+      - "8083:8083"
+    environment:
+      - gravitee_management_mongodb_uri=mongodb://mongodb:27017/gravitee
+      - gravitee_reporters_elasticsearch_enabled=false
+      - gravitee_analytics_type=none
+    depends_on:
+      - mongodb
+
+  gateway:
+    image: graviteeio/apim-gateway:4.9.13
+    container_name: gateway
+    user: root
+    ports:
+      - "8082:8082"
+    volumes:
+      - ./target/gravitee-reporter-otellogs-1.0.0-SNAPSHOT.zip:/opt/graviteeio-gateway/plugins-ext/gravitee-reporter-otellogs.zip
+      - ./src/test/resources/dummy-gcp-creds.json:/opt/graviteeio-gateway/config/dummy-gcp-creds.json
+    environment:
+      - gravitee_management_mongodb_uri=mongodb://mongodb:27017/gravitee
+      - gravitee_reporters_elasticsearch_enabled=false
+      - gravitee_plugins_path_0=/opt/graviteeio-gateway/plugins
+      - gravitee_plugins_path_1=/opt/graviteeio-gateway/plugins-ext
+      - gravitee_reporters_otellogs_enabled=true
+      - gravitee_reporters_otellogs_exporter=gcloud
+      - gravitee_reporters_otellogs_gcloud_projectId=test-project
+      - gravitee_reporters_otellogs_gcloud_credentialsFile=/opt/graviteeio-gateway/config/dummy-gcp-creds.json
+      - gravitee_reporters_otellogs_batchSize=1
+      - gravitee_reporters_otellogs_scheduledDelayMs=100
+      - management-api
+      - collector
+
+  httpbin:
+    image: mccutchen/go-httpbin
+    container_name: httpbin
+    ports:
+      - "8081:8080"
