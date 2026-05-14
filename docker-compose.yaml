@@ -23,13 +23,6 @@ services:
     ports:
       - "27017:27017"
 
-  loki:
-    image: grafana/loki:3.0.0
-    container_name: loki
-    ports:
-      - "3100:3100"
-    command: -config.file=/etc/loki/local-config.yaml
-
   collector:
     image: otel/opentelemetry-collector-contrib:0.104.0
     container_name: collector
@@ -39,8 +32,6 @@ services:
     ports:
       - "4317:4317"
       - "4318:4318"
-    depends_on:
-      - loki
 
   management-api:
     image: graviteeio/apim-management-api:4.9.13
@@ -74,6 +65,7 @@ services:
       - gravitee_reporters_otellogs_gcloud_credentialsFile=/opt/graviteeio-gateway/config/dummy-gcp-creds.json
       - gravitee_reporters_otellogs_batchSize=1
       - gravitee_reporters_otellogs_scheduledDelayMs=100
+    depends_on:
       - management-api
       - collector
 

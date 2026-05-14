@@ -351,7 +351,7 @@
                             </execution>
                         </executions>
                         <configuration>
-                            <includes><include>**/*E2EIT.java</include></includes>
+                            <includes><include>**/*IT.java</include></includes>
                             <groups>e2e</groups>
                             <systemPropertyVariables>
                                 <project.version>${project.version}</project.version>

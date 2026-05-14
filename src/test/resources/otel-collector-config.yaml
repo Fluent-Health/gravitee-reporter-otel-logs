@@ -13,16 +13,20 @@ processors:
         key: service.name
         value: "gravitee-otellogs"
 
+# We use the `debug` exporter at verbosity=detailed so the E2E test can verify
+# log record content by tailing the collector's stdout. This avoids running a
+# storage backend (e.g. Loki) just for verification.
 exporters:
-  loki:
-    endpoint: "http://loki:3100/loki/api/v1/push"
-    default_labels_enabled:
-      exporter: true
-      job: true
+  debug:
+    verbosity: detailed
 
 service:
+  telemetry:
+    logs:
+      # Quiet down the collector's own internal logs; we only want exporter output.
+      level: info
   pipelines:
     logs:
       receivers: [otlp]
       processors: [resource]
-      exporters: [loki]
+      exporters: [debug]
