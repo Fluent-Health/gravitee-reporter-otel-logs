@@ -91,7 +91,7 @@ class OtelLogsReporterIT {
       .exists();
 
     // 1. Loki
-    loki = new GenericContainer<>("grafana/loki:3.0.0")
+    loki = new GenericContainer<>("grafana/loki:2.9.10")
       .withNetwork(NETWORK)
       .withNetworkAliases("loki")
       .withExposedPorts(LOKI_PORT)
@@ -247,7 +247,7 @@ class OtelLogsReporterIT {
     // Assert: the log record appears in Loki
     await("log record to appear in Loki")
       .atMost(Duration.ofSeconds(60))
-      .pollInterval(Duration.ofSeconds(2))
+      .pollInterval(Duration.ofSeconds(5))
       .until(() ->
         queryLoki("{job=\"gravitee-otellogs\"} |= \"otel-e2e\"").contains(
           "otel-e2e"
@@ -260,7 +260,10 @@ class OtelLogsReporterIT {
       String encoded = URLEncoder.encode(logqlQuery, StandardCharsets.UTF_8);
       String url = lokiBase + "/loki/api/v1/query_range?query=" + encoded;
       var response = http.send(
-        HttpRequest.newBuilder().uri(URI.create(url)).build(),
+        HttpRequest.newBuilder()
+          .uri(URI.create(url))
+          .header("X-Scope-OrgID", "fake")
+          .build(),
         HttpResponse.BodyHandlers.ofString()
       );
       return response.body();

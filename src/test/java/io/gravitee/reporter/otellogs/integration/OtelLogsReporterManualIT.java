@@ -70,7 +70,7 @@ class OtelLogsReporterManualIT {
 
   @BeforeAll
   static void startInfrastructure() throws Exception {
-    loki = new GenericContainer<>("grafana/loki:3.0.0")
+    loki = new GenericContainer<>("grafana/loki:2.9.10")
       .withNetwork(NETWORK)
       .withNetworkAliases("loki")
       .withExposedPorts(LOKI_PORT)
@@ -148,7 +148,7 @@ class OtelLogsReporterManualIT {
     // sanitized to /api/v1/users/{id}) which is unique to the metrics fixture.
     await("GET 200 log to appear in Loki")
       .atMost(Duration.ofSeconds(60))
-      .pollInterval(Duration.ofSeconds(2))
+      .pollInterval(Duration.ofSeconds(5))
       .until(() ->
         queryLoki("{job=\"gravitee-otellogs\"} |= \"users\"").contains("users")
       );
@@ -165,7 +165,7 @@ class OtelLogsReporterManualIT {
 
     await("500 error log to appear in Loki")
       .atMost(Duration.ofSeconds(60))
-      .pollInterval(Duration.ofSeconds(2))
+      .pollInterval(Duration.ofSeconds(5))
       .until(() ->
         queryLoki("{job=\"gravitee-otellogs\"} |= \"500\"").contains("500")
       );
@@ -189,7 +189,7 @@ class OtelLogsReporterManualIT {
     // Query with the normalised hex prefix to match it in the stored line.
     await("trace ID log to appear in Loki")
       .atMost(Duration.ofSeconds(60))
-      .pollInterval(Duration.ofSeconds(2))
+      .pollInterval(Duration.ofSeconds(5))
       .until(() ->
         queryLoki("{job=\"gravitee-otellogs\"} |= \"550e8400\"").contains(
           "550e8400"
@@ -208,7 +208,7 @@ class OtelLogsReporterManualIT {
 
     await("endpoint DOWN log to appear in Loki")
       .atMost(Duration.ofSeconds(60))
-      .pollInterval(Duration.ofSeconds(2))
+      .pollInterval(Duration.ofSeconds(5))
       .until(() ->
         queryLoki("{job=\"gravitee-otellogs\"} |= \"DOWN\"").contains("DOWN")
       );
@@ -233,7 +233,7 @@ class OtelLogsReporterManualIT {
     // is serialised into the Loki log line JSON by the OTel Loki exporter.
     await("sentry-trace log to appear in Loki")
       .atMost(Duration.ofSeconds(60))
-      .pollInterval(Duration.ofSeconds(2))
+      .pollInterval(Duration.ofSeconds(5))
       .until(() ->
         queryLoki("{job=\"gravitee-otellogs\"} |= \"771a43a4\"").contains(
           "771a43a4"
@@ -262,7 +262,7 @@ class OtelLogsReporterManualIT {
     // log record's traceId. The Loki exporter serialises it into the log line.
     await("traceparent trace log to appear in Loki")
       .atMost(Duration.ofSeconds(60))
-      .pollInterval(Duration.ofSeconds(2))
+      .pollInterval(Duration.ofSeconds(5))
       .until(() ->
         queryLoki("{job=\"gravitee-otellogs\"} |= \"4bf92f35\"").contains(
           "4bf92f35"
@@ -302,7 +302,10 @@ class OtelLogsReporterManualIT {
       String url =
         lokiBase + "/loki/api/v1/query_range?query=" + encoded + "&limit=50";
       var response = http.send(
-        HttpRequest.newBuilder().uri(URI.create(url)).build(),
+        HttpRequest.newBuilder()
+          .uri(URI.create(url))
+          .header("X-Scope-OrgID", "fake")
+          .build(),
         HttpResponse.BodyHandlers.ofString()
       );
       String body = response.body();
