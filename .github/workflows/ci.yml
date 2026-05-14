@@ -14,9 +14,9 @@ jobs:
       id-token: write # required for GCP Workload Identity Federation
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           java-version: "21"
           distribution: "temurin"
@@ -34,7 +34,7 @@ jobs:
       # Auth is placed here so the credentials file written by the action is not
       # present when prettier runs during `mvn test` above (prettier scans the
       # working directory and would fail on the generated gha-creds-*.json file).
-      - uses: google-github-actions/auth@v2
+      - uses: google-github-actions/auth@v3
         with:
           workload_identity_provider: ${{ vars.GHA_WIF_PROVIDER }}
           service_account: ${{ vars.GHA_SERVICE_ACCOUNT }}
@@ -47,8 +47,10 @@ jobs:
       - name: Build plugin ZIP
         run: mvn package -DskipTests -q
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: plugin-zip
-          path: target/gravitee-reporter-otel-logs-*.zip
+          # Artifact ID is "otellogs" (one word), not "otel-logs" — must match
+          # the Maven artifactId in pom.xml.
+          path: target/gravitee-reporter-otellogs-*.zip
           retention-days: 7
