@@ -25,6 +25,7 @@ import io.gravitee.reporter.api.v4.metric.Metrics;
 import io.gravitee.reporter.otellogs.OtelLogsReporter;
 import io.gravitee.reporter.otellogs.OtelTestSupport;
 import io.gravitee.reporter.otellogs.mapper.*;
+import io.gravitee.reporter.otellogs.writer.CustomOtlpHttpLogRecordExporter;
 import io.gravitee.reporter.otellogs.writer.OtelLogWriter;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
