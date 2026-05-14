@@ -63,7 +63,7 @@ public final class OtelTestSupport {
     m.setSubscriptionId("sub-abc");
     m.setPlanId("plan-gold");
     m.setApplicationId("app-001");
-    m.setTimestamp(FIXTURE_TIMESTAMP_MS);
+    m.setTimestamp(System.currentTimeMillis());
     return m;
   }
 
@@ -97,7 +97,7 @@ public final class OtelTestSupport {
       "Test API",
       "https://backend.example.com/health"
     )
-      .on(FIXTURE_TIMESTAMP_MS)
+      .on(System.currentTimeMillis())
       .build();
     s.setAvailable(available);
     s.setResponseTime(100L);
@@ -151,7 +151,7 @@ public final class OtelTestSupport {
     m.setUri("/api/v1/users/42");
     m.setStatus(status);
     m.setGatewayResponseTimeMs(42L);
-    m.setTimestamp(FIXTURE_TIMESTAMP_MS);
+    m.setTimestamp(System.currentTimeMillis());
     // no m.setLog(...)
     return m;
   }

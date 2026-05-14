@@ -55,6 +55,13 @@ public class MetricsToLogRecordMapper {
     String path = rawPath != null ? rawPath : "-";
     String body = method + " " + path + " → " + m.getStatus();
 
+    if (traceId != null) {
+      body += " [trace_id=" + traceId + "]";
+    }
+    if (sentryTraceId != null) {
+      body += " [sentry_trace_id=" + sentryTraceId + "]";
+    }
+
     return new OtelLogRecord(
       traceId,
       spanId,
