@@ -97,7 +97,12 @@ class OtelLogsReporterIT {
       .withExposedPorts(LOKI_PORT)
       .withCommand("-config.file=/etc/loki/local-config.yaml")
       .withLogConsumer(new Slf4jLogConsumer(LoggerFactory.getLogger("tc.loki")))
-      .waitingFor(Wait.forHttp("/ready").forPort(LOKI_PORT).forStatusCode(200));
+      .waitingFor(
+        Wait.forLogMessage(
+          ".*this scheduler is in the ReplicationSet, will now accept requests.*",
+          1
+        )
+      );
 
     // 2. OTel Collector
     collector = new GenericContainer<>(
@@ -190,7 +195,7 @@ class OtelLogsReporterIT {
         Wait.forHttp("/_node/health").forPort(18082).forStatusCode(200)
       );
 
-    Startables.deepStart(gateway, httpbin).join();
+    Startables.deepStart(gateway, httpbin, loki).join();
 
     gatewayBase = "http://localhost:" + gateway.getMappedPort(8082);
     lokiBase = "http://localhost:" + loki.getMappedPort(LOKI_PORT);
@@ -273,8 +278,15 @@ class OtelLogsReporterIT {
         HttpRequest.newBuilder().uri(URI.create(url)).build(),
         HttpResponse.BodyHandlers.ofString()
       );
-      return response.body();
+      String body = response.body();
+      if (response.statusCode() != 200) {
+        throw new RuntimeException(
+          "Loki query failed with status " + response.statusCode() + ": " + body
+        );
+      }
+      return body;
     } catch (Exception e) {
+      if (e instanceof RuntimeException) throw (RuntimeException) e;
       return "";
     }
   }

@@ -77,10 +77,10 @@ class OtelLogsReporterManualIT {
       .withCommand("-config.file=/etc/loki/local-config.yaml")
       .withLogConsumer(new Slf4jLogConsumer(LoggerFactory.getLogger("tc.loki")))
       .waitingFor(
-        Wait.forHttp("/ready")
-          .forPort(LOKI_PORT)
-          .forStatusCode(200)
-          .withStartupTimeout(Duration.ofSeconds(60))
+        Wait.forLogMessage(
+          ".*this scheduler is in the ReplicationSet, will now accept requests.*",
+          1
+        )
       );
 
     collector = new GenericContainer<>(
@@ -317,15 +317,13 @@ class OtelLogsReporterManualIT {
       );
       String body = response.body();
       if (response.statusCode() != 200) {
-        log.warn(
-          "Loki query returned HTTP {}: {}",
-          response.statusCode(),
-          body
+        throw new RuntimeException(
+          "Loki query failed with status " + response.statusCode() + ": " + body
         );
-        return "";
       }
       return body;
     } catch (Exception e) {
+      if (e instanceof RuntimeException) throw (RuntimeException) e;
       log.warn("Loki query failed: {}", e.getMessage());
       return "";
     }
