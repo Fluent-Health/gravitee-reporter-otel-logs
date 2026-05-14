@@ -17,49 +17,14 @@ package io.gravitee.reporter.otellogs.writer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.util.LinkedHashMap;
-import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class GcpResourceTest {
 
   @Test
-  void globalSerializesWithoutLabels() {
-    assertThat(GcpResource.global().toJson()).isEqualTo(
-      "{\"type\":\"global\"}"
-    );
-  }
-
-  @Test
-  void k8sPodSerializesAllLabels() {
-    var labels = new LinkedHashMap<String, String>();
-    labels.put("project_id", "fh-dev-svc");
-    labels.put("location", "us-central1-a");
-    labels.put("cluster_name", "gravitee-cluster");
-    labels.put("namespace_name", "gravitee");
-    labels.put("pod_name", "gateway-7f9b8d6c4-x2k9p");
-
-    var resource = new GcpResource("k8s_pod", labels);
-
-    assertThat(resource.toJson()).isEqualTo(
-      "{\"type\":\"k8s_pod\",\"labels\":{" +
-        "\"project_id\":\"fh-dev-svc\"," +
-        "\"location\":\"us-central1-a\"," +
-        "\"cluster_name\":\"gravitee-cluster\"," +
-        "\"namespace_name\":\"gravitee\"," +
-        "\"pod_name\":\"gateway-7f9b8d6c4-x2k9p\"" +
-        "}}"
-    );
-  }
-
-  @Test
-  void escapesQuotesAndBackslashesInLabels() {
-    var resource = new GcpResource(
-      "k8s_pod",
-      Map.of("pod_name", "weird\"name\\with\\specials")
-    );
-    assertThat(resource.toJson()).contains(
-      "\"pod_name\":\"weird\\\"name\\\\with\\\\specials\""
-    );
+  void globalIsTypeGlobalWithEmptyLabels() {
+    var r = GcpResource.global();
+    assertThat(r.type()).isEqualTo("global");
+    assertThat(r.labels()).isEmpty();
   }
 }

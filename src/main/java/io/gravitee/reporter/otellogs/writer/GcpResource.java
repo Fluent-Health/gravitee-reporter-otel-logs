@@ -115,30 +115,6 @@ public record GcpResource(String type, Map<String, String> labels) {
     return new GcpResource("k8s_pod", labels);
   }
 
-  /** Serializes to the Cloud Logging {@code resource} JSON shape. */
-  public String toJson() {
-    var sb = new StringBuilder("{\"type\":\"")
-      .append(escape(type))
-      .append("\"");
-    if (!labels.isEmpty()) {
-      sb.append(",\"labels\":{");
-      boolean first = true;
-      for (var e : labels.entrySet()) {
-        if (!first) sb.append(",");
-        first = false;
-        sb
-          .append("\"")
-          .append(escape(e.getKey()))
-          .append("\":\"")
-          .append(escape(e.getValue()))
-          .append("\"");
-      }
-      sb.append("}");
-    }
-    sb.append("}");
-    return sb.toString();
-  }
-
   private static String readK8sNamespace() {
     try {
       if (!Files.exists(K8S_NAMESPACE_FILE)) return null;
@@ -170,9 +146,5 @@ public record GcpResource(String type, Map<String, String> labels) {
       // expected when running outside GCE
     }
     return null;
-  }
-
-  private static String escape(String s) {
-    return s.replace("\\", "\\\\").replace("\"", "\\\"");
   }
 }

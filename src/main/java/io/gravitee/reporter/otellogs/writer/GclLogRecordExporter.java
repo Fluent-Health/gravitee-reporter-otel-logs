@@ -17,6 +17,7 @@ package io.gravitee.reporter.otellogs.writer;
 
 import com.google.auth.oauth2.GoogleCredentials;
 import com.google.auth.oauth2.ServiceAccountCredentials;
+import com.google.gson.Gson;
 import io.opentelemetry.api.logs.Severity;
 import io.opentelemetry.sdk.common.CompletableResultCode;
 import io.opentelemetry.sdk.logs.data.LogRecordData;
@@ -30,6 +31,7 @@ import java.net.http.HttpResponse;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.Locale;
@@ -60,6 +62,7 @@ public class GclLogRecordExporter implements LogRecordExporter {
   private static final DateTimeFormatter RFC3339 = DateTimeFormatter.ofPattern(
     "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'"
   ).withZone(ZoneOffset.UTC);
+  private static final Gson GSON = new Gson();
 
   private final String projectId;
   private final String logName;
@@ -134,24 +137,28 @@ public class GclLogRecordExporter implements LogRecordExporter {
     GcpResource resource,
     Collection<LogRecordData> records
   ) {
-    var entries = new StringBuilder("[");
-    boolean first = true;
+    var entries = new ArrayList<Map<String, Object>>(records.size());
     for (var rec : records) {
-      if (!first) entries.append(",");
-      first = false;
-      appendEntry(entries, projectId, rec);
+      entries.add(buildEntry(projectId, rec));
     }
-    entries.append("]");
 
-    return (
-      """
-      {"logName":"projects/%s/logs/%s","resource":%s,"entries":%s}
-      """.formatted(projectId, logName, resource.toJson(), entries)
-    ).strip();
+    var root = new LinkedHashMap<String, Object>();
+    root.put("logName", "projects/" + projectId + "/logs/" + logName);
+    root.put("resource", resourceMap(resource));
+    root.put("entries", entries);
+    return GSON.toJson(root);
   }
 
-  private static void appendEntry(
-    StringBuilder out,
+  private static Map<String, Object> resourceMap(GcpResource resource) {
+    var m = new LinkedHashMap<String, Object>();
+    m.put("type", resource.type());
+    if (!resource.labels().isEmpty()) {
+      m.put("labels", resource.labels());
+    }
+    return m;
+  }
+
+  private static Map<String, Object> buildEntry(
     String projectId,
     LogRecordData rec
   ) {
@@ -165,20 +172,25 @@ public class GclLogRecordExporter implements LogRecordExporter {
     var httpRequest = new LinkedHashMap<String, Object>();
     var labels = new LinkedHashMap<String, String>();
     var payload = new LinkedHashMap<String, Object>();
+    payload.put("message", rec.getBody().asString());
+
     rec
       .getAttributes()
       .forEach((key, value) -> {
         switch (key.getKey()) {
           case "http.method" -> httpRequest.put("requestMethod", value);
           case "http.status" -> httpRequest.put("status", value);
-          case "http.latency_ms" -> httpRequest.put("latency", value);
+          case "http.latency_ms" -> httpRequest.put(
+            "latency",
+            formatLatency(((Number) value).longValue())
+          );
           case "entrypoint.request.content_length" -> httpRequest.put(
             "requestSize",
-            value
+            String.valueOf(value)
           );
           case "entrypoint.response.content_length" -> httpRequest.put(
             "responseSize",
-            value
+            String.valueOf(value)
           );
           case "sentry.trace_id" -> labels.put(
             "sentry_trace_id",
@@ -192,110 +204,23 @@ public class GclLogRecordExporter implements LogRecordExporter {
         }
       });
 
-    out.append("{");
-    out.append("\"timestamp\":\"").append(timestamp).append("\"");
-    out
-      .append(",\"severity\":\"")
-      .append(mapSeverity(rec.getSeverity()))
-      .append("\"");
-
-    appendHttpRequest(out, httpRequest);
-    appendLabels(out, labels);
-    appendJsonPayload(out, rec.getBody().asString(), payload);
+    var entry = new LinkedHashMap<String, Object>();
+    entry.put("timestamp", timestamp);
+    entry.put("severity", mapSeverity(rec.getSeverity()));
+    if (!httpRequest.isEmpty()) entry.put("httpRequest", httpRequest);
+    if (!labels.isEmpty()) entry.put("labels", labels);
+    entry.put("jsonPayload", payload);
 
     var spanCtx = rec.getSpanContext();
     if (spanCtx.isValid()) {
-      out
-        .append(",\"trace\":\"projects/")
-        .append(projectId)
-        .append("/traces/")
-        .append(spanCtx.getTraceId())
-        .append("\"");
-      out.append(",\"spanId\":\"").append(spanCtx.getSpanId()).append("\"");
-      out.append(",\"traceSampled\":true");
+      entry.put(
+        "trace",
+        "projects/" + projectId + "/traces/" + spanCtx.getTraceId()
+      );
+      entry.put("spanId", spanCtx.getSpanId());
+      entry.put("traceSampled", true);
     }
-
-    out.append("}");
-  }
-
-  private static void appendHttpRequest(
-    StringBuilder out,
-    Map<String, Object> fields
-  ) {
-    if (fields.isEmpty()) return;
-    out.append(",\"httpRequest\":{");
-    boolean first = true;
-    for (var e : fields.entrySet()) {
-      if (!first) out.append(",");
-      first = false;
-      String k = e.getKey();
-      Object v = e.getValue();
-      switch (k) {
-        case "status" -> out.append("\"status\":").append(v);
-        case "latency" -> out
-          .append("\"latency\":\"")
-          .append(formatLatency(((Number) v).longValue()))
-          .append("\"");
-        case "requestSize", "responseSize" -> out
-          .append("\"")
-          .append(k)
-          .append("\":\"")
-          .append(v)
-          .append("\"");
-        default -> out
-          .append("\"")
-          .append(k)
-          .append("\":\"")
-          .append(escapeJson(String.valueOf(v)))
-          .append("\"");
-      }
-    }
-    out.append("}");
-  }
-
-  private static void appendLabels(
-    StringBuilder out,
-    Map<String, String> labels
-  ) {
-    if (labels.isEmpty()) return;
-    out.append(",\"labels\":{");
-    boolean first = true;
-    for (var e : labels.entrySet()) {
-      if (!first) out.append(",");
-      first = false;
-      out
-        .append("\"")
-        .append(escapeJson(e.getKey()))
-        .append("\":\"")
-        .append(escapeJson(e.getValue()))
-        .append("\"");
-    }
-    out.append("}");
-  }
-
-  private static void appendJsonPayload(
-    StringBuilder out,
-    String message,
-    Map<String, Object> attrs
-  ) {
-    out.append(",\"jsonPayload\":{");
-    out.append("\"message\":\"").append(escapeJson(message)).append("\"");
-    for (var e : attrs.entrySet()) {
-      out.append(",\"").append(escapeJson(e.getKey())).append("\":");
-      appendJsonValue(out, e.getValue());
-    }
-    out.append("}");
-  }
-
-  // Preserves numeric/boolean types so GCL renders/sorts them correctly.
-  private static void appendJsonValue(StringBuilder out, Object v) {
-    if (v == null) {
-      out.append("null");
-    } else if (v instanceof Number || v instanceof Boolean) {
-      out.append(v);
-    } else {
-      out.append("\"").append(escapeJson(String.valueOf(v))).append("\"");
-    }
+    return entry;
   }
 
   // GCL HttpRequest.latency is a Duration encoded as "<seconds>.<nanos>s".
@@ -327,16 +252,6 @@ public class GclLogRecordExporter implements LogRecordExporter {
         FATAL4 -> "ERROR";
       default -> "DEFAULT";
     };
-  }
-
-  private static String escapeJson(String s) {
-    if (s == null) return "";
-    return s
-      .replace("\\", "\\\\")
-      .replace("\"", "\\\"")
-      .replace("\n", "\\n")
-      .replace("\r", "\\r")
-      .replace("\t", "\\t");
   }
 
   private static GoogleCredentials loadCredentials(String credentialsFile) {

@@ -208,6 +208,18 @@
             </exclusions>
         </dependency>
 
+        <!--
+            Gson — used by GclLogRecordExporter to serialize LogEntry payloads.
+            Already arrives transitively via google-http-client-gson (a dep of
+            google-auth-library-oauth2-http), but declared explicitly here so a
+            future bump of the auth library can't silently drop or downgrade it.
+        -->
+        <dependency>
+            <groupId>com.google.code.gson</groupId>
+            <artifactId>gson</artifactId>
+            <version>2.12.1</version>
+        </dependency>
+
         <!-- ===== TEST ===== -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>
