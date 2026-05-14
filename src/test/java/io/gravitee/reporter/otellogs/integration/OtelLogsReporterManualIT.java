@@ -70,7 +70,7 @@ class OtelLogsReporterManualIT {
 
   @BeforeAll
   static void startInfrastructure() throws Exception {
-    loki = new GenericContainer<>("grafana/loki:2.9.10")
+    loki = new GenericContainer<>("grafana/loki:3.0.0")
       .withNetwork(NETWORK)
       .withNetworkAliases("loki")
       .withExposedPorts(LOKI_PORT)
@@ -299,13 +299,20 @@ class OtelLogsReporterManualIT {
   private String queryLoki(String logqlQuery) {
     try {
       String encoded = URLEncoder.encode(logqlQuery, StandardCharsets.UTF_8);
+      long now = System.currentTimeMillis();
+      long start = (now - 600_000L) * 1_000_000L; // 10m ago in nanos
+      long end = (now + 5_000L) * 1_000_000L; // 5s in future in nanos
       String url =
-        lokiBase + "/loki/api/v1/query_range?query=" + encoded + "&limit=50";
+        lokiBase +
+        "/loki/api/v1/query_range?query=" +
+        encoded +
+        "&start=" +
+        start +
+        "&end=" +
+        end +
+        "&limit=50";
       var response = http.send(
-        HttpRequest.newBuilder()
-          .uri(URI.create(url))
-          .header("X-Scope-OrgID", "fake")
-          .build(),
+        HttpRequest.newBuilder().uri(URI.create(url)).build(),
         HttpResponse.BodyHandlers.ofString()
       );
       String body = response.body();
