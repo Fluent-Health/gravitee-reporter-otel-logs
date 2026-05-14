@@ -149,14 +149,6 @@ class OtelLogsReporterManualIT {
     await("GET 200 log to appear in Loki")
       .atMost(Duration.ofSeconds(60))
       .pollInterval(Duration.ofSeconds(2))
-      .conditionEvaluationListener(condition -> {
-        if (!condition.isSatisfied()) {
-          log.debug(
-            "Loki state for job: {}",
-            queryLoki("{job=\"gravitee-otellogs\"}")
-          );
-        }
-      })
       .until(() ->
         queryLoki("{job=\"gravitee-otellogs\"} |= \"users\"").contains("users")
       );
@@ -174,14 +166,6 @@ class OtelLogsReporterManualIT {
     await("500 error log to appear in Loki")
       .atMost(Duration.ofSeconds(60))
       .pollInterval(Duration.ofSeconds(2))
-      .conditionEvaluationListener(condition -> {
-        if (!condition.isSatisfied()) {
-          log.debug(
-            "Loki state for job: {}",
-            queryLoki("{job=\"gravitee-otellogs\"}")
-          );
-        }
-      })
       .until(() ->
         queryLoki("{job=\"gravitee-otellogs\"} |= \"500\"").contains("500")
       );
@@ -206,14 +190,6 @@ class OtelLogsReporterManualIT {
     await("trace ID log to appear in Loki")
       .atMost(Duration.ofSeconds(60))
       .pollInterval(Duration.ofSeconds(2))
-      .conditionEvaluationListener(condition -> {
-        if (!condition.isSatisfied()) {
-          log.debug(
-            "Loki state for job: {}",
-            queryLoki("{job=\"gravitee-otellogs\"}")
-          );
-        }
-      })
       .until(() ->
         queryLoki("{job=\"gravitee-otellogs\"} |= \"550e8400\"").contains(
           "550e8400"
@@ -233,14 +209,6 @@ class OtelLogsReporterManualIT {
     await("endpoint DOWN log to appear in Loki")
       .atMost(Duration.ofSeconds(60))
       .pollInterval(Duration.ofSeconds(2))
-      .conditionEvaluationListener(condition -> {
-        if (!condition.isSatisfied()) {
-          log.debug(
-            "Loki state for job: {}",
-            queryLoki("{job=\"gravitee-otellogs\"}")
-          );
-        }
-      })
       .until(() ->
         queryLoki("{job=\"gravitee-otellogs\"} |= \"DOWN\"").contains("DOWN")
       );
@@ -266,14 +234,6 @@ class OtelLogsReporterManualIT {
     await("sentry-trace log to appear in Loki")
       .atMost(Duration.ofSeconds(60))
       .pollInterval(Duration.ofSeconds(2))
-      .conditionEvaluationListener(condition -> {
-        if (!condition.isSatisfied()) {
-          log.debug(
-            "Loki state for job: {}",
-            queryLoki("{job=\"gravitee-otellogs\"}")
-          );
-        }
-      })
       .until(() ->
         queryLoki("{job=\"gravitee-otellogs\"} |= \"771a43a4\"").contains(
           "771a43a4"
@@ -303,14 +263,6 @@ class OtelLogsReporterManualIT {
     await("traceparent trace log to appear in Loki")
       .atMost(Duration.ofSeconds(60))
       .pollInterval(Duration.ofSeconds(2))
-      .conditionEvaluationListener(condition -> {
-        if (!condition.isSatisfied()) {
-          log.debug(
-            "Loki state for job: {}",
-            queryLoki("{job=\"gravitee-otellogs\"}")
-          );
-        }
-      })
       .until(() ->
         queryLoki("{job=\"gravitee-otellogs\"} |= \"4bf92f35\"").contains(
           "4bf92f35"
@@ -347,19 +299,8 @@ class OtelLogsReporterManualIT {
   private String queryLoki(String logqlQuery) {
     try {
       String encoded = URLEncoder.encode(logqlQuery, StandardCharsets.UTF_8);
-      long now = System.currentTimeMillis();
-      long start = (now - 120_000L) * 1_000_000L;
-      long end = (now + 5_000L) * 1_000_000L;
       String url =
-        lokiBase +
-        "/loki/api/v1/query_range" +
-        "?query=" +
-        encoded +
-        "&start=" +
-        start +
-        "&end=" +
-        end +
-        "&limit=50";
+        lokiBase + "/loki/api/v1/query_range?query=" + encoded + "&limit=50";
       var response = http.send(
         HttpRequest.newBuilder().uri(URI.create(url)).build(),
         HttpResponse.BodyHandlers.ofString()
