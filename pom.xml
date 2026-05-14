@@ -121,6 +121,19 @@
             <scope>provided</scope>
         </dependency>
 
+        <!--
+            Override guava to provided. Gravitee node ships guava 33.4.5-jre on
+            the gateway classpath (transitive of gravitee-node-api), but the
+            gravitee-apim BOM declares it at compile scope which would otherwise
+            bundle it. Marking it provided saves ~6 MB from the plugin ZIP
+            without changing runtime behaviour.
+        -->
+        <dependency>
+            <groupId>com.google.guava</groupId>
+            <artifactId>guava</artifactId>
+            <scope>provided</scope>
+        </dependency>
+
         <!-- ===== BUNDLED — shipped inside the plugin ZIP under lib/ ===== -->
         <dependency>
             <groupId>io.opentelemetry</groupId>
@@ -129,26 +142,70 @@
         <dependency>
             <groupId>io.opentelemetry</groupId>
             <artifactId>opentelemetry-sdk</artifactId>
+            <exclusions>
+                <!--
+                    We only emit logs. SdkLoggerProvider does not depend on
+                    sdk-metrics, so we save ~300 KB by excluding it.
+                -->
+                <exclusion>
+                    <groupId>io.opentelemetry</groupId>
+                    <artifactId>opentelemetry-sdk-metrics</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>io.opentelemetry</groupId>
             <artifactId>opentelemetry-sdk-logs</artifactId>
+            <exclusions>
+                <!--
+                    opentelemetry-api-incubator (alpha) is not used by our code
+                    and ships ~37 KB of incubating APIs.
+                -->
+                <exclusion>
+                    <groupId>io.opentelemetry</groupId>
+                    <artifactId>opentelemetry-api-incubator</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
-        <dependency>
-            <groupId>io.opentelemetry</groupId>
-            <artifactId>opentelemetry-exporter-otlp</artifactId>
-        </dependency>
+        <!--
+            We use CustomOtlpHttpLogRecordExporter (built on java.net.http
+            .HttpClient) to avoid the SPI issues the OkHttp-based OTel exporter
+            has inside the Gravitee plugin classloader. We only need the
+            marshaler from opentelemetry-exporter-otlp-common — not the full
+            opentelemetry-exporter-otlp module, which pulls in okhttp + okio
+            (~520 KB) and an autoconfigure-spi we don't use.
+        -->
         <dependency>
             <groupId>io.opentelemetry</groupId>
             <artifactId>opentelemetry-exporter-otlp-common</artifactId>
             <version>${opentelemetry.version}</version>
         </dependency>
 
-        <!-- GCL exporter mode: ADC and service-account-key credential loading -->
+        <!--
+            GCL exporter mode: ADC and service-account-key credential loading.
+            We exclude annotation-only and Guava-helper JARs that aren't
+            actually needed at runtime — they're either CLASS-retention
+            annotations (jsr305, error_prone, auto-value) the runtime never
+            inspects, or come back via guava (which is provided).
+        -->
         <dependency>
             <groupId>com.google.auth</groupId>
             <artifactId>google-auth-library-oauth2-http</artifactId>
             <version>1.27.0</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>com.google.code.findbugs</groupId>
+                    <artifactId>jsr305</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>com.google.errorprone</groupId>
+                    <artifactId>error_prone_annotations</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>com.google.auto.value</groupId>
+                    <artifactId>auto-value-annotations</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
         <!-- ===== TEST ===== -->
