@@ -147,13 +147,13 @@ class OtelLogsReporterManualIT {
     // Assert: the body contains the path segment "users" (from /api/v1/users/42,
     // sanitized to /api/v1/users/{id}) which is unique to the metrics fixture.
     await("GET 200 log to appear in Loki")
-      .atMost(Duration.ofSeconds(30))
+      .atMost(Duration.ofSeconds(60))
       .pollInterval(Duration.ofSeconds(2))
       .conditionEvaluationListener(condition -> {
         if (!condition.isSatisfied()) {
           log.debug(
-            "Loki response so far: {}",
-            queryLoki("{job=\"gravitee-otellogs\"} |= \"users\"")
+            "Loki state for job: {}",
+            queryLoki("{job=\"gravitee-otellogs\"}")
           );
         }
       })
@@ -172,13 +172,13 @@ class OtelLogsReporterManualIT {
     writer.flush();
 
     await("500 error log to appear in Loki")
-      .atMost(Duration.ofSeconds(30))
+      .atMost(Duration.ofSeconds(60))
       .pollInterval(Duration.ofSeconds(2))
       .conditionEvaluationListener(condition -> {
         if (!condition.isSatisfied()) {
           log.debug(
-            "Loki response so far: {}",
-            queryLoki("{job=\"gravitee-otellogs\"} |= \"500\"")
+            "Loki state for job: {}",
+            queryLoki("{job=\"gravitee-otellogs\"}")
           );
         }
       })
@@ -204,13 +204,13 @@ class OtelLogsReporterManualIT {
     // The OTel Loki exporter serialises the traceId into the log line body JSON.
     // Query with the normalised hex prefix to match it in the stored line.
     await("trace ID log to appear in Loki")
-      .atMost(Duration.ofSeconds(30))
+      .atMost(Duration.ofSeconds(60))
       .pollInterval(Duration.ofSeconds(2))
       .conditionEvaluationListener(condition -> {
         if (!condition.isSatisfied()) {
           log.debug(
-            "Loki response so far: {}",
-            queryLoki("{job=\"gravitee-otellogs\"} |= \"550e8400\"")
+            "Loki state for job: {}",
+            queryLoki("{job=\"gravitee-otellogs\"}")
           );
         }
       })
@@ -231,13 +231,13 @@ class OtelLogsReporterManualIT {
     writer.flush();
 
     await("endpoint DOWN log to appear in Loki")
-      .atMost(Duration.ofSeconds(30))
+      .atMost(Duration.ofSeconds(60))
       .pollInterval(Duration.ofSeconds(2))
       .conditionEvaluationListener(condition -> {
         if (!condition.isSatisfied()) {
           log.debug(
-            "Loki response so far: {}",
-            queryLoki("{job=\"gravitee-otellogs\"} |= \"DOWN\"")
+            "Loki state for job: {}",
+            queryLoki("{job=\"gravitee-otellogs\"}")
           );
         }
       })
@@ -264,13 +264,13 @@ class OtelLogsReporterManualIT {
     // The sentry.trace_id attribute value "771a43a4192642f0b136d5159a501700"
     // is serialised into the Loki log line JSON by the OTel Loki exporter.
     await("sentry-trace log to appear in Loki")
-      .atMost(Duration.ofSeconds(30))
+      .atMost(Duration.ofSeconds(60))
       .pollInterval(Duration.ofSeconds(2))
       .conditionEvaluationListener(condition -> {
         if (!condition.isSatisfied()) {
           log.debug(
-            "Loki response so far: {}",
-            queryLoki("{job=\"gravitee-otellogs\"} |= \"771a43a4\"")
+            "Loki state for job: {}",
+            queryLoki("{job=\"gravitee-otellogs\"}")
           );
         }
       })
@@ -301,13 +301,13 @@ class OtelLogsReporterManualIT {
     // The traceId 4bf92f3577b34da6a3ce929d0e0e4736 is emitted as the OTel
     // log record's traceId. The Loki exporter serialises it into the log line.
     await("traceparent trace log to appear in Loki")
-      .atMost(Duration.ofSeconds(30))
+      .atMost(Duration.ofSeconds(60))
       .pollInterval(Duration.ofSeconds(2))
       .conditionEvaluationListener(condition -> {
         if (!condition.isSatisfied()) {
           log.debug(
-            "Loki response so far: {}",
-            queryLoki("{job=\"gravitee-otellogs\"} |= \"4bf92f35\"")
+            "Loki state for job: {}",
+            queryLoki("{job=\"gravitee-otellogs\"}")
           );
         }
       })

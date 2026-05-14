@@ -63,6 +63,12 @@ public class CustomOtlpHttpLogRecordExporter implements LogRecordExporter {
       ByteArrayOutputStream baos = new ByteArrayOutputStream();
       marshaler.writeBinaryTo(baos);
 
+      log.debug(
+        "Sending OTLP logs request to {} ({} records)",
+        endpoint,
+        logs.size()
+      );
+
       HttpRequest request = HttpRequest.newBuilder()
         .uri(endpoint.resolve("v1/logs"))
         .timeout(Duration.ofSeconds(10))
