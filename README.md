@@ -30,7 +30,7 @@ To load the plugin into a local Gravitee gateway, copy the ZIP to the gateway's 
 
 ## Configuration
 
-Add a `reporters.otel-logs` block to `gravitee.yml`. The `exporter` property selects the mode; all other properties are shared unless noted.
+Add a `reporters.otellogs` block to `gravitee.yml`. The `exporter` property selects the mode; all other properties are shared unless noted.
 
 ### Property reference
 
@@ -55,7 +55,7 @@ Routes records through an OpenTelemetry Collector that translates them to Cloud 
 
 ```yaml
 reporters:
-  otel-logs:
+  otellogs:
     enabled: true                          # default
     exporter: otlp                         # default
     endpoint: "http://otel-collector.YOUR_NAMESPACE.svc.cluster.local:4317"
@@ -75,7 +75,7 @@ Writes directly to Cloud Logging via the REST API. No OTel Collector is needed. 
 
 ```yaml
 reporters:
-  otel-logs:
+  otellogs:
     enabled: true                          # default
     exporter: gcloud
     correlationHeader: "X-Request-ID"      # default

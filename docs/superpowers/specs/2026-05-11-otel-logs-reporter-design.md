@@ -43,7 +43,7 @@ Gravitee APIM (JVM)
 src/main/java/io/gravitee/reporter/otellogs/
 ├── OtelLogsReporter.java                        ← implements Reporter, AbstractService
 ├── config/
-│   └── OtelLogsReporterConfiguration.java       ← @Value bindings for reporters.otel-logs.*
+│   └── OtelLogsReporterConfiguration.java       ← @Value bindings for reporters.otellogs.*
 ├── mapper/
 │   ├── MetricsToLogRecordMapper.java
 │   ├── LogToLogRecordMapper.java
@@ -131,7 +131,7 @@ Low-cardinality attributes (`api.name`, `http.method`, `severity`) become Loki s
 
 ```yaml
 reporters:
-  otel-logs:
+  otellogs:
     enabled: true
     endpoint: "https://logging.googleapis.com"   # OTLP gRPC target; use http:// scheme for plaintext (local/test)
     correlationHeader: "X-Request-ID"            # header to extract trace_id from
@@ -268,7 +268,7 @@ All bundled (not provided) — the Gravitee gateway runtime does not supply OTel
 
 **`plugin.properties`:**
 ```properties
-id=otel-logs
+id=otellogs
 name=${project.name}
 version=${project.version}
 description=${project.description}
