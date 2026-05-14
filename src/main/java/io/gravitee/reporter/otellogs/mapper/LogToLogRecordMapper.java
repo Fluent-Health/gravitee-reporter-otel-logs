@@ -52,10 +52,6 @@ public class LogToLogRecordMapper {
       AttributeKey.stringKey("api.name"),
       log.getApiName()
     );
-    if (log.getApiId() != null) b.put(
-      AttributeKey.stringKey("api.id"),
-      log.getApiId()
-    );
     if (req != null && req.getMethod() != null) b.put(
       AttributeKey.stringKey("http.method"),
       req.getMethod().name()

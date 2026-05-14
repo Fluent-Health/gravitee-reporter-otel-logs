@@ -64,9 +64,9 @@ class MessageMetricsToLogRecordMapperTest {
     assertThat(
       record.attributes().get(AttributeKey.stringKey("api.name"))
     ).isEqualTo("Test API");
-    assertThat(
-      record.attributes().get(AttributeKey.stringKey("api.id"))
-    ).isEqualTo("api-123");
+    assertThat(record.attributes().get(AttributeKey.stringKey("api.id")))
+      .as("api.id should not be emitted")
+      .isNull();
   }
 
   @Test

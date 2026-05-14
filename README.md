@@ -273,13 +273,13 @@ Every emitted record carries these OTel SDK fields:
 
 Attributes by event type:
 
-**Metrics (HTTP request):** `api.name`, `api.id`, `api.type`, `http.method`, `http.status`, `http.latency_ms`, `upstream.endpoint`, `context.application`, `context.plan`, `context.subscription`, `gateway.proxy_latency_ms`, `gateway.api_latency_ms`, `error.message`
+**Metrics (HTTP request):** `api.name`, `api.type`, `http.method`, `http.status`, `http.latency_ms`, `upstream.endpoint`, `context.application`, `context.plan`, `context.subscription`, `gateway.proxy_latency_ms`, `gateway.api_latency_ms`, `error.message`
 
-**EndpointStatus (health checks):** `api.name`, `api.id`, `endpoint.name`, `endpoint.url`, `endpoint.status`, `endpoint.response_time_ms`
+**EndpointStatus (health checks):** `api.name`, `endpoint.name`, `endpoint.url`, `endpoint.status`, `endpoint.response_time_ms`
 
-**MessageMetrics (async/event-driven APIs):** `api.name`, `api.id`, `message.count`, `message.error_count`, `message.content_length`
+**MessageMetrics (async/event-driven APIs):** `api.name`, `message.count`, `message.error_count`, `message.content_length`
 
-**Log (request/response metadata):** `api.name`, `api.id`, `http.method`, `http.status`, `log.request.headers_count`, `log.response.headers_count`, `log.request.content_length`, `log.response.content_length` — disabled by default (`reportLogs: false`)
+**Log (request/response metadata):** `api.name`, `http.method`, `http.status`, `log.request.headers_count`, `log.response.headers_count`, `log.request.content_length`, `log.response.content_length` — disabled by default (`reportLogs: false`)
 
 No payload values are ever logged. No PII or PHI in any attribute.
 

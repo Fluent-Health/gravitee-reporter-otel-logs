@@ -110,7 +110,6 @@ class GclLogsReporterIT {
       "GET /gcloud-it-probe → 200",
       Attributes.builder()
         .put(AttributeKey.stringKey("api.name"), "GCL IT Test")
-        .put(AttributeKey.stringKey("api.id"), "gcloud-it")
         .put(AttributeKey.longKey("http.status"), 200L)
         .build()
     );
