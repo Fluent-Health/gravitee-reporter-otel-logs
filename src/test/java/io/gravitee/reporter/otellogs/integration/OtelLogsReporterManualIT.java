@@ -154,13 +154,13 @@ class OtelLogsReporterManualIT {
         if (!condition.isSatisfied()) {
           log.debug(
             "Loki response so far: {}",
-            queryLoki("{job=\"gravitee/gravitee-otel-logs\"} |= \"users\"")
+            queryLoki("{job=\"gravitee-otellogs\"} |= \"users\"")
           );
         }
       })
       .until(() ->
         queryLoki(
-          "{job=\"gravitee/gravitee-otel-logs\"} |= \"users\""
+          "{job=\"gravitee-otellogs\"} |= \"users\""
         ).contains("users")
       );
   }
@@ -181,12 +181,12 @@ class OtelLogsReporterManualIT {
         if (!condition.isSatisfied()) {
           log.debug(
             "Loki response so far: {}",
-            queryLoki("{job=\"gravitee/gravitee-otel-logs\"} |= \"500\"")
+            queryLoki("{job=\"gravitee-otellogs\"} |= \"500\"")
           );
         }
       })
       .until(() ->
-        queryLoki("{job=\"gravitee/gravitee-otel-logs\"} |= \"500\"").contains(
+        queryLoki("{job=\"gravitee-otellogs\"} |= \"500\"").contains(
           "500"
         )
       );
@@ -215,13 +215,13 @@ class OtelLogsReporterManualIT {
         if (!condition.isSatisfied()) {
           log.debug(
             "Loki response so far: {}",
-            queryLoki("{job=\"gravitee/gravitee-otel-logs\"} |= \"550e8400\"")
+            queryLoki("{job=\"gravitee-otellogs\"} |= \"550e8400\"")
           );
         }
       })
       .until(() ->
         queryLoki(
-          "{job=\"gravitee/gravitee-otel-logs\"} |= \"550e8400\""
+          "{job=\"gravitee-otellogs\"} |= \"550e8400\""
         ).contains("550e8400")
       );
   }
@@ -242,12 +242,12 @@ class OtelLogsReporterManualIT {
         if (!condition.isSatisfied()) {
           log.debug(
             "Loki response so far: {}",
-            queryLoki("{job=\"gravitee/gravitee-otel-logs\"} |= \"DOWN\"")
+            queryLoki("{job=\"gravitee-otellogs\"} |= \"DOWN\"")
           );
         }
       })
       .until(() ->
-        queryLoki("{job=\"gravitee/gravitee-otel-logs\"} |= \"DOWN\"").contains(
+        queryLoki("{job=\"gravitee-otellogs\"} |= \"DOWN\"").contains(
           "DOWN"
         )
       );
@@ -277,13 +277,13 @@ class OtelLogsReporterManualIT {
         if (!condition.isSatisfied()) {
           log.debug(
             "Loki response so far: {}",
-            queryLoki("{job=\"gravitee/gravitee-otel-logs\"} |= \"771a43a4\"")
+            queryLoki("{job=\"gravitee-otellogs\"} |= \"771a43a4\"")
           );
         }
       })
       .until(() ->
         queryLoki(
-          "{job=\"gravitee/gravitee-otel-logs\"} |= \"771a43a4\""
+          "{job=\"gravitee-otellogs\"} |= \"771a43a4\""
         ).contains("771a43a4")
       );
   }
@@ -314,13 +314,13 @@ class OtelLogsReporterManualIT {
         if (!condition.isSatisfied()) {
           log.debug(
             "Loki response so far: {}",
-            queryLoki("{job=\"gravitee/gravitee-otel-logs\"} |= \"4bf92f35\"")
+            queryLoki("{job=\"gravitee-otellogs\"} |= \"4bf92f35\"")
           );
         }
       })
       .until(() ->
         queryLoki(
-          "{job=\"gravitee/gravitee-otel-logs\"} |= \"4bf92f35\""
+          "{job=\"gravitee-otellogs\"} |= \"4bf92f35\""
         ).contains("4bf92f35")
       );
   }
