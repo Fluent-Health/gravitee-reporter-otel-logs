@@ -56,7 +56,7 @@ class OtelLogsReporterManualIT {
   private static final Logger log = LoggerFactory.getLogger(
     OtelLogsReporterManualIT.class
   );
-  private static final int OTLP_PORT = 4317;
+  private static final int OTLP_PORT = 4318;
   private static final int LOKI_PORT = 3100;
 
   private static final Network NETWORK = Network.newNetwork();
@@ -111,12 +111,11 @@ class OtelLogsReporterManualIT {
 
     String collectorEndpoint =
       "http://localhost:" + collector.getMappedPort(OTLP_PORT);
-    var exporter = OtlpGrpcLogRecordExporter.builder()
-      .setEndpoint(collectorEndpoint)
-      .build();
+    var exporter = new CustomOtlpHttpLogRecordExporter(collectorEndpoint);
     writer = new OtelLogWriter(exporter, 10, 500);
 
     var cfg = OtelTestSupport.config();
+    cfg.setEndpoint(collectorEndpoint);
 
     reporter = new OtelLogsReporter(cfg);
     inject(reporter, "writer", writer);
