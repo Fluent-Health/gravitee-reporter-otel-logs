@@ -18,71 +18,94 @@ package io.gravitee.reporter.otellogs.integration;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
-import io.gravitee.reporter.api.Reportable;
-import io.gravitee.reporter.api.health.EndpointStatus;
-import io.gravitee.reporter.api.v4.log.Log;
-import io.gravitee.reporter.api.v4.metric.Metrics;
-import io.gravitee.reporter.otellogs.OtelLogsReporter;
-import io.gravitee.reporter.otellogs.OtelTestSupport;
-import io.gravitee.reporter.otellogs.mapper.*;
-import io.gravitee.reporter.otellogs.writer.OtelLogWriter;
-import io.opentelemetry.exporter.otlp.logs.OtlpGrpcLogRecordExporter;
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.net.URI;
-import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.Duration;
-import java.util.Map;
 import java.util.Objects;
+import java.util.function.Consumer;
 import java.util.stream.Stream;
-import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.containers.MongoDBContainer;
 import org.testcontainers.containers.Network;
-import org.testcontainers.containers.output.Slf4jLogConsumer;
+import org.testcontainers.containers.output.OutputFrame;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.lifecycle.Startables;
 import org.testcontainers.utility.MountableFile;
 
+/**
+ * End-to-end test that stands up the full Gravitee APIM stack (Gateway, Management
+ * API, MongoDB, mock backend) with the OTel Logs reporter plugin installed and an
+ * OTel Collector receiving OTLP HTTP.
+ *
+ * <p>The collector is configured with the {@code debug} exporter at {@code
+ * verbosity: detailed} (see {@code otel-collector-config.yaml}). The test asserts
+ * on the collector's stdout, which captures every received log record. No storage
+ * backend (Loki, Tempo, GCL) is required — the test only verifies that the gateway
+ * plugin produces and ships OTLP correctly.
+ *
+ * <p>Container logs are routed through {@link #filteredLogConsumer(String)}: only a
+ * curated set of milestone lines (plugin install, API deploy, errors) is forwarded
+ * to SLF4J, so the test output reads as a coherent narrative rather than thousands
+ * of lines of Spring/Vert.x/Mongo startup spam. On failure, the captured collector
+ * output is dumped so you can still see what arrived.
+ */
 @Tag("integration")
+@Tag("e2e")
 class OtelLogsReporterIT {
 
   private static final Logger log = LoggerFactory.getLogger(
     OtelLogsReporterIT.class
   );
-  private static final int OTLP_PORT = 4317;
-  private static final int LOKI_PORT = 3100;
+  private static final int OTLP_PORT = 4318;
 
   private static final Network NETWORK = Network.newNetwork();
-  private static GenericContainer<?> loki;
+  private static final String MONGO_URI =
+    "mongodb://mongodb:27017/gravitee" +
+    "?serverSelectionTimeoutMS=5000&connectTimeoutMS=5000&socketTimeoutMS=5000";
+
+  private static MongoDBContainer mongodb;
+  private static GenericContainer<?> managementApi;
+  private static GenericContainer<?> gateway;
+  private static GenericContainer<?> httpbin;
   private static GenericContainer<?> collector;
 
-  private static OtelLogsReporter reporter;
-  private static OtelLogWriter writer;
+  /** Captures the collector's stdout so the test can assert on emitted log records. */
+  private static final StringBuffer collectorOut = new StringBuffer();
+
   private static HttpClient http;
-  private static String lokiBase;
+  private static String gatewayBase;
+  private static ManagementApiHelper mgmtHelper;
 
   @BeforeAll
   static void startInfrastructure() throws Exception {
-    loki = new GenericContainer<>("grafana/loki:3.0.0")
-      .withNetwork(NETWORK)
-      .withNetworkAliases("loki")
-      .withExposedPorts(LOKI_PORT)
-      .withCommand("-config.file=/etc/loki/local-config.yaml")
-      .withLogConsumer(new Slf4jLogConsumer(LoggerFactory.getLogger("tc.loki")))
-      .waitingFor(
-        Wait.forHttp("/ready")
-          .forPort(LOKI_PORT)
-          .forStatusCode(200)
-          .withStartupTimeout(Duration.ofSeconds(60))
-      );
+    String pluginVersion = System.getProperty(
+      "project.version",
+      "1.0.0-SNAPSHOT"
+    );
+    Path pluginZip = Paths.get(
+      "target/gravitee-reporter-otellogs-" + pluginVersion + ".zip"
+    );
+    assertThat(pluginZip)
+      .as(
+        "Plugin ZIP not found at %s — run 'mvn package -DskipTests' first",
+        pluginZip.toAbsolutePath()
+      )
+      .exists();
 
+    // 1. OTel Collector — sink for the gateway plugin's OTLP HTTP export.
+    //    Detailed debug-exporter output is captured into collectorOut for the
+    //    assertion; we deliberately do NOT also forward it to SLF4J — every
+    //    received log record would otherwise produce ~20 lines of stdout noise.
     collector = new GenericContainer<>(
       "otel/opentelemetry-collector-contrib:0.104.0"
     )
@@ -94,337 +117,224 @@ class OtelLogsReporterIT {
         "/etc/otel-collector-config.yaml"
       )
       .withCommand("--config=/etc/otel-collector-config.yaml")
-      .withLogConsumer(
-        new Slf4jLogConsumer(LoggerFactory.getLogger("tc.collector"))
-      )
+      .withLogConsumer(frame -> collectorOut.append(frame.getUtf8String()))
+      .waitingFor(Wait.forLogMessage(".*Everything is ready.*", 1));
+
+    // 2. MongoDB — backing store for the Management API.
+    mongodb = new MongoDBContainer("mongo:7.0")
+      .withNetwork(NETWORK)
+      .withNetworkAliases("mongodb");
+
+    // 3. Management API.
+    managementApi = new GenericContainer<>(
+      "graviteeio/apim-management-api:4.9.13"
+    )
+      .withNetwork(NETWORK)
+      .withNetworkAliases("management-api")
+      .withExposedPorts(8083, 18083)
+      .withEnv("gravitee_management_mongodb_uri", MONGO_URI)
+      .withEnv("gravitee_reporters_elasticsearch_enabled", "false")
+      .withEnv("gravitee_analytics_type", "none")
+      .withEnv("gravitee_services_core_http_enabled", "true")
+      .withEnv("gravitee_services_core_http_port", "18083")
+      .withEnv("gravitee_services_core_http_host", "0.0.0.0")
+      .withEnv("gravitee_services_core_http_authentication_type", "none")
+      .dependsOn(mongodb)
+      .withLogConsumer(filteredLogConsumer("management-api"))
       .waitingFor(
-        Wait.forLogMessage(".*Everything is ready.*", 1).withStartupTimeout(
-          Duration.ofSeconds(90)
-        )
+        Wait.forHttp("/_node/health").forPort(18083).forStatusCode(200)
+      );
+
+    // 4. Mock backend the gateway proxies to.
+    httpbin = new GenericContainer<>("mccutchen/go-httpbin")
+      .withNetwork(NETWORK)
+      .withNetworkAliases("httpbin")
+      .withExposedPorts(8080)
+      .withLogConsumer(filteredLogConsumer("httpbin"))
+      .waitingFor(Wait.forHttp("/get").forPort(8080).forStatusCode(200));
+
+    // 5. Gateway with the plugin installed and pointed at the collector.
+    gateway = new GenericContainer<>("graviteeio/apim-gateway:4.9.13")
+      .withCreateContainerCmdModifier(cmd -> cmd.withUser("root"))
+      .withNetwork(NETWORK)
+      .withNetworkAliases("gateway")
+      .withExposedPorts(8082, 18082)
+      .withCopyFileToContainer(
+        MountableFile.forHostPath(pluginZip.toAbsolutePath().toString()),
+        "/opt/graviteeio-gateway/plugins-ext/gravitee-reporter-otellogs.zip"
       )
-      .dependsOn(loki);
+      .withEnv("gravitee_management_mongodb_uri", MONGO_URI)
+      .withEnv("gravitee_ratelimit_mongodb_uri", MONGO_URI)
+      .withEnv("gravitee_reporters_elasticsearch_enabled", "false")
+      .withEnv("gravitee_plugins_path_0", "/opt/graviteeio-gateway/plugins")
+      .withEnv("gravitee_plugins_path_1", "/opt/graviteeio-gateway/plugins-ext")
+      .withEnv("gravitee_services_core_http_enabled", "true")
+      .withEnv("gravitee_services_core_http_port", "18082")
+      .withEnv("gravitee_services_core_http_host", "0.0.0.0")
+      .withEnv("gravitee_services_core_http_authentication_type", "none")
+      .withEnv("gravitee_services_bridge_http_enabled", "false")
+      .withEnv("gravitee_services_healthcheck_enabled", "false")
+      // Reporter config
+      .withEnv("gravitee_reporters_otellogs_enabled", "true")
+      .withEnv("gravitee_reporters_otellogs_reportLogs", "true")
+      .withEnv("gravitee_reporters_otellogs_exporter", "otlp")
+      .withEnv("gravitee_reporters_otellogs_endpoint", "http://collector:4318")
+      .withEnv("gravitee_reporters_otellogs_batchSize", "1")
+      .withEnv("gravitee_reporters_otellogs_scheduledDelayMs", "100")
+      .dependsOn(managementApi, collector)
+      .withLogConsumer(filteredLogConsumer("gateway"))
+      .waitingFor(
+        Wait.forHttp("/_node/health").forPort(18082).forStatusCode(200)
+      );
 
-    Startables.deepStart(loki, collector).join();
+    Startables.deepStart(gateway, httpbin).join();
 
-    lokiBase = "http://localhost:" + loki.getMappedPort(LOKI_PORT);
+    gatewayBase = "http://localhost:" + gateway.getMappedPort(8082);
+    String mgmtBase = "http://localhost:" + managementApi.getMappedPort(8083);
     http = HttpClient.newHttpClient();
+    mgmtHelper = new ManagementApiHelper(mgmtBase);
 
-    String collectorEndpoint =
-      "http://localhost:" + collector.getMappedPort(OTLP_PORT);
-    var exporter = OtlpGrpcLogRecordExporter.builder()
-      .setEndpoint(collectorEndpoint)
-      .build();
-    writer = new OtelLogWriter(exporter, 10, 500);
+    // Create and deploy an API on the gateway.
+    mgmtHelper.createAndDeployApi(
+      "OTel E2E Test",
+      "/otel-e2e",
+      "http://httpbin:8080/get"
+    );
 
-    var cfg = OtelTestSupport.config();
-
-    reporter = new OtelLogsReporter();
-    inject(reporter, "cfg", cfg);
-    inject(reporter, "writer", writer);
-    inject(reporter, "metricsMapper", new MetricsToLogRecordMapper(cfg));
-    inject(reporter, "logMapper", new LogToLogRecordMapper());
-    inject(reporter, "endpointMapper", new EndpointStatusToLogRecordMapper());
-    inject(reporter, "messageMapper", new MessageMetricsToLogRecordMapper());
-    invokeProtected(reporter, "doStart");
+    // Wait for the gateway to sync the deployed API.
+    await("gateway to serve API")
+      .atMost(Duration.ofSeconds(90))
+      .pollInterval(Duration.ofSeconds(3))
+      .until(
+        () ->
+          http
+            .send(
+              HttpRequest.newBuilder()
+                .uri(URI.create(gatewayBase + "/otel-e2e"))
+                .build(),
+              HttpResponse.BodyHandlers.discarding()
+            )
+            .statusCode() !=
+          404
+      );
   }
 
   @AfterAll
-  static void stopInfrastructure() throws Exception {
-    if (reporter != null) invokeProtected(reporter, "doStop");
-    Stream.of(collector, loki)
+  static void stopInfrastructure() {
+    Stream.of(gateway, httpbin, managementApi, mongodb, collector)
       .filter(Objects::nonNull)
       .forEach(GenericContainer::stop);
     NETWORK.close();
   }
 
-  // ── Scenario 1: basic request log appears in Loki ──────────────────────────
-
   @Test
-  void metricsLogAppearsInLoki() {
-    Metrics m = OtelTestSupport.metrics(200);
-    m.setTimestamp(System.currentTimeMillis());
-    reporter.report(m);
-    writer.flush();
+  void requestLogAppearsInCollectorViaGateway() throws Exception {
+    // Snapshot output length so we only consider lines emitted by this request.
+    int before = collectorOut.length();
 
-    // Assert: the body contains the path segment "users" (from /api/v1/users/42,
-    // sanitized to /api/v1/users/{id}) which is unique to the metrics fixture.
-    await("GET 200 log to appear in Loki")
-      .atMost(Duration.ofSeconds(30))
-      .pollInterval(Duration.ofSeconds(2))
-      .conditionEvaluationListener(condition -> {
-        if (!condition.isSatisfied()) {
-          log.debug(
-            "Loki response so far: {}",
-            queryLoki("{job=\"gravitee/gravitee-otel-logs\"} |= \"users\"")
-          );
-        }
-      })
-      .until(() ->
-        queryLoki(
-          "{job=\"gravitee/gravitee-otel-logs\"} |= \"users\""
-        ).contains("users")
-      );
-  }
-
-  // ── Scenario 3: error status → SEVERITY_ERROR ──────────────────────────────
-
-  @Test
-  void errorStatusProducesSeverityErrorLog() {
-    Metrics m500 = OtelTestSupport.metrics(500);
-    m500.setTimestamp(System.currentTimeMillis());
-    reporter.report(m500);
-    writer.flush();
-
-    await("500 error log to appear in Loki")
-      .atMost(Duration.ofSeconds(30))
-      .pollInterval(Duration.ofSeconds(2))
-      .conditionEvaluationListener(condition -> {
-        if (!condition.isSatisfied()) {
-          log.debug(
-            "Loki response so far: {}",
-            queryLoki("{job=\"gravitee/gravitee-otel-logs\"} |= \"500\"")
-          );
-        }
-      })
-      .until(() ->
-        queryLoki("{job=\"gravitee/gravitee-otel-logs\"} |= \"500\"").contains(
-          "500"
-        )
-      );
-  }
-
-  // ── Scenario 4: X-Request-ID → traceId in log record ──────────────────────
-
-  @Test
-  void traceIdFromXRequestIdAppearsInLogLine() {
-    // UUID 550e8400-e29b-41d4-a716-446655440000 is normalised to 32-char hex:
-    // 550e8400e29b41d4a716446655440000
-    var m = OtelTestSupport.metricsWithHeaders(
-      200,
-      Map.of("X-Request-ID", "550e8400-e29b-41d4-a716-446655440000")
+    var response = http.send(
+      HttpRequest.newBuilder()
+        .uri(URI.create(gatewayBase + "/otel-e2e"))
+        .header("X-Log", "true")
+        .build(),
+      HttpResponse.BodyHandlers.discarding()
     );
-    m.setTimestamp(System.currentTimeMillis());
-    reporter.report(m);
-    writer.flush();
+    assertThat(response.statusCode()).isEqualTo(200);
 
-    // The OTel Loki exporter serialises the traceId into the log line body JSON.
-    // Query with the normalised hex prefix to match it in the stored line.
-    await("trace ID log to appear in Loki")
-      .atMost(Duration.ofSeconds(30))
-      .pollInterval(Duration.ofSeconds(2))
-      .conditionEvaluationListener(condition -> {
-        if (!condition.isSatisfied()) {
-          log.debug(
-            "Loki response so far: {}",
-            queryLoki("{job=\"gravitee/gravitee-otel-logs\"} |= \"550e8400\"")
-          );
-        }
-      })
-      .until(() ->
-        queryLoki(
-          "{job=\"gravitee/gravitee-otel-logs\"} |= \"550e8400\""
-        ).contains("550e8400")
+    // The debug exporter at verbosity=detailed prints the LogRecord body, which
+    // contains the request path "otel-e2e". Tail the captured stdout.
+    try {
+      await("log record to appear in collector output")
+        .atMost(Duration.ofSeconds(30))
+        .pollInterval(Duration.ofMillis(500))
+        .until(() -> collectorOut.substring(before).contains("otel-e2e"));
+      log.info(
+        "OTLP log record arrived at collector with body containing 'otel-e2e'"
       );
-  }
-
-  // ── Scenario 6: endpoint DOWN health check appears in Loki ─────────────────
-
-  @Test
-  void endpointStatusDownAppearsInLoki() {
-    EndpointStatus es = OtelTestSupport.endpointStatus(false);
-    es.setTimestamp(System.currentTimeMillis());
-    reporter.report(es);
-    writer.flush();
-
-    await("endpoint DOWN log to appear in Loki")
-      .atMost(Duration.ofSeconds(30))
-      .pollInterval(Duration.ofSeconds(2))
-      .conditionEvaluationListener(condition -> {
-        if (!condition.isSatisfied()) {
-          log.debug(
-            "Loki response so far: {}",
-            queryLoki("{job=\"gravitee/gravitee-otel-logs\"} |= \"DOWN\"")
-          );
-        }
-      })
-      .until(() ->
-        queryLoki("{job=\"gravitee/gravitee-otel-logs\"} |= \"DOWN\"").contains(
-          "DOWN"
-        )
+    } catch (Throwable t) {
+      // Surface the captured output on failure so the cause is debuggable even
+      // though we filter the SLF4J forwarder.
+      String tail = collectorOut.substring(before);
+      log.error(
+        "Expected log record did not arrive. Collector output since request was:\n{}",
+        tail.isEmpty() ? "(empty)" : tail
       );
+      throw t;
+    }
   }
 
-  // ── Scenario 7: sentry-trace header → sentry.trace_id attribute ────────────
-
-  @Test
-  void sentryTraceAttributeAppearsInLog() {
-    var m = OtelTestSupport.metricsWithHeaders(
-      200,
-      Map.of(
-        "sentry-trace",
-        "771a43a4192642f0b136d5159a501700-7d17675a3e4f44e8-1"
-      )
-    );
-    m.setTimestamp(System.currentTimeMillis());
-    reporter.report(m);
-    writer.flush();
-
-    // The sentry.trace_id attribute value "771a43a4192642f0b136d5159a501700"
-    // is serialised into the Loki log line JSON by the OTel Loki exporter.
-    await("sentry-trace log to appear in Loki")
-      .atMost(Duration.ofSeconds(30))
-      .pollInterval(Duration.ofSeconds(2))
-      .conditionEvaluationListener(condition -> {
-        if (!condition.isSatisfied()) {
-          log.debug(
-            "Loki response so far: {}",
-            queryLoki("{job=\"gravitee/gravitee-otel-logs\"} |= \"771a43a4\"")
-          );
-        }
-      })
-      .until(() ->
-        queryLoki(
-          "{job=\"gravitee/gravitee-otel-logs\"} |= \"771a43a4\""
-        ).contains("771a43a4")
-      );
-  }
-
-  // ── Scenario 2: traceparent header → trace context in log record ───────────
-
-  @Test
-  void traceparentHeaderSetsTraceContext() {
-    // traceparent: version-traceId-parentId-flags
-    // traceId = 4bf92f3577b34da6a3ce929d0e0e4736
-    var m = OtelTestSupport.metricsWithHeaders(
-      200,
-      Map.of(
-        "traceparent",
-        "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
-      )
-    );
-    m.setTimestamp(System.currentTimeMillis());
-    reporter.report(m);
-    writer.flush();
-
-    // The traceId 4bf92f3577b34da6a3ce929d0e0e4736 is emitted as the OTel
-    // log record's traceId. The Loki exporter serialises it into the log line.
-    await("traceparent trace log to appear in Loki")
-      .atMost(Duration.ofSeconds(30))
-      .pollInterval(Duration.ofSeconds(2))
-      .conditionEvaluationListener(condition -> {
-        if (!condition.isSatisfied()) {
-          log.debug(
-            "Loki response so far: {}",
-            queryLoki("{job=\"gravitee/gravitee-otel-logs\"} |= \"4bf92f35\"")
-          );
-        }
-      })
-      .until(() ->
-        queryLoki(
-          "{job=\"gravitee/gravitee-otel-logs\"} |= \"4bf92f35\""
-        ).contains("4bf92f35")
-      );
-  }
-
-  // ── Scenario 5: reportLogs=false → reporter rejects Log events ───────────
-
-  @Test
-  void canHandleReturnsFalseForLogWhenReportLogsDisabled() {
-    // reportLogs=false is set in OtelTestSupport.config().
-    // Gravitee gateway calls canHandle() before report(); if this returns false,
-    // the gateway never invokes report() for Log events.
-    // The full negative emission path (report() skipping writer) is covered
-    // in OtelLogsReporterTest (unit level with Mockito verification).
-    var l = OtelTestSupport.log(200);
-    assertThat(reporter.canHandle(l))
-      .as("reporter must reject Log events when reportLogs=false")
-      .isFalse();
-  }
-
-  // ── Helpers ────────────────────────────────────────────────────────────────
+  // ── Log filtering ─────────────────────────────────────────────────────────
 
   /**
-   * Queries Loki for log entries matching the given LogQL expression and returns
-   * the raw HTTP response body. Logs a warning on non-200 responses.
+   * Returns a log consumer that drops most container output and forwards only
+   * lines we actually want to see in the test log: errors, plugin install
+   * milestones, API deploy/undeploy events, and Gravitee's "started" markers.
+   * Everything else is dropped — keeping the E2E narrative coherent.
    *
-   * <p>The Loki response is a JSON envelope:
-   * {@code {"data": {"result": [{"values": [["<ts_ns>", "<line>"], ...]}]}}}.
-   * Callers use {@code |= "token"} filters in the LogQL query so that the token
-   * is guaranteed to appear in the actual log line, not the JSON envelope.
+   * <p>If you ever need full container output for debugging, temporarily
+   * replace this with {@code new Slf4jLogConsumer(LoggerFactory.getLogger("tc." +
+   * prefix))}.
    */
-  private String queryLoki(String logqlQuery) {
-    try {
-      String encoded = URLEncoder.encode(logqlQuery, StandardCharsets.UTF_8);
-      long now = System.currentTimeMillis();
-      long start = (now - 120_000L) * 1_000_000L;
-      long end = (now + 5_000L) * 1_000_000L;
-      String url =
-        lokiBase +
-        "/loki/api/v1/query_range" +
-        "?query=" +
-        encoded +
-        "&start=" +
-        start +
-        "&end=" +
-        end +
-        "&limit=50";
-      var response = http.send(
-        HttpRequest.newBuilder().uri(URI.create(url)).build(),
-        HttpResponse.BodyHandlers.ofString()
-      );
-      String body = response.body();
-      if (response.statusCode() != 200) {
-        log.warn(
-          "Loki query returned HTTP {}: {}",
-          response.statusCode(),
-          body
-        );
-        return "";
+  private static Consumer<OutputFrame> filteredLogConsumer(String prefix) {
+    Logger logger = LoggerFactory.getLogger("tc." + prefix);
+    return frame -> {
+      String line = frame.getUtf8String().stripTrailing();
+      if (line.isEmpty()) return;
+
+      // Errors and exceptions: forward as error. STDOUT vs STDERR isn't a
+      // reliable signal — httpbin (Go) and others emit normal INFO to STDERR.
+      if (
+        line.contains(" ERROR ") ||
+        line.contains(" FATAL ") ||
+        line.contains("Exception")
+      ) {
+        if (isKnownBootNoise(line)) return;
+        logger.error("{}", line);
+        return;
       }
-      return body;
-    } catch (Exception e) {
-      log.warn("Loki query failed: {}", e.getMessage());
-      return "";
-    }
+
+      // Forward milestones that prove the stack is wired correctly.
+      // ApiManagerImpl covers the "API has been deployed" event for our test
+      // API; we intentionally do NOT match the broader "has been deployed"
+      // string because Gravitee ships example SharedPolicyGroups that all
+      // deploy at startup and would otherwise spam the log.
+      if (
+        line.contains("Install plugin: otellogs") ||
+        line.contains("ApiManagerImpl") ||
+        line.contains("API Gateway id[")
+      ) {
+        logger.info("{}", line);
+      }
+      // Everything else is dropped.
+    };
   }
 
-  private static void inject(Object target, String fieldName, Object value)
-    throws Exception {
-    Field f = findField(target.getClass(), fieldName);
-    f.setAccessible(true);
-    f.set(target, value);
-  }
-
-  private static Field findField(Class<?> clazz, String name)
-    throws NoSuchFieldException {
-    try {
-      return clazz.getDeclaredField(name);
-    } catch (NoSuchFieldException e) {
-      if (clazz.getSuperclass() != null) return findField(
-        clazz.getSuperclass(),
-        name
-      );
-      throw e;
-    }
-  }
-
-  private static void invokeProtected(Object target, String methodName)
-    throws Exception {
-    Method m = findMethod(target.getClass(), methodName);
-    m.setAccessible(true);
-    m.invoke(target);
-  }
-
-  private static Method findMethod(Class<?> clazz, String name)
-    throws NoSuchMethodException {
-    try {
-      return clazz.getDeclaredMethod(name);
-    } catch (NoSuchMethodException e) {
-      if (clazz.getSuperclass() != null) return findMethod(
-        clazz.getSuperclass(),
-        name
-      );
-      throw e;
-    }
+  /**
+   * Lines that look like errors but are harmless during normal startup. Add
+   * sparingly: each entry risks masking a real issue with the same signature.
+   */
+  private static boolean isKnownBootNoise(String line) {
+    return (
+      // Mongo driver logs a noisy "no primary" line before the replica set
+      // election completes on first boot.
+      line.contains("No server chosen by") ||
+      // Vert.x sometimes logs SLF4J binding warnings that don't affect us.
+      line.contains("SLF4J: ") ||
+      // Health-check probe noise during the gateway warm-up window.
+      line.contains("HealthCheckHandler") ||
+      // Gravitee always tries to detect K8s config; logs ERROR when not
+      // running in K8s. Expected in TestContainers.
+      line.contains("KubernetesConfig") ||
+      // Gravitee gateway lacks the AM module's classes; the Groovy sandbox
+      // logs a WARN+ClassNotFoundException for each missing AM type at boot.
+      // Irrelevant to this plugin.
+      line.contains("io.gravitee.am.model") ||
+      // The Management API tries to send notification emails when none are
+      // configured; logs ERROR per attempt.
+      line.contains("EmailNotifierServiceImpl") ||
+      // mgmt-api may emit a stack trace if it sees the dummy GCP creds file;
+      // harmless when we're using the OTLP exporter (not the gcloud one).
+      line.contains("dummy-gcp-creds")
+    );
   }
 }

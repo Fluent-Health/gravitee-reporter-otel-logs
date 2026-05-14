@@ -123,6 +123,8 @@ class GclLogsReporterIT {
       projectId,
       traceId
     );
+    String expectedTraceField =
+      "\"projects/" + projectId + "/traces/" + traceId + "\"";
 
     await("log entry with traceId=" + traceId + " to appear in GCL")
       .atMost(Duration.ofSeconds(90))
@@ -133,14 +135,27 @@ class GclLogsReporterIT {
           condition.getElapsedTimeInMS() / 1000.0
         )
       )
-      .until(() -> queryLogEntries(filter));
+      .until(() -> queryLogEntries(filter).contains(expectedTraceField));
 
-    assertThat(queryLogEntries(filter)).isTrue();
+    // Final assertion: the response body actually echoes back the exact trace
+    // field we just wrote — i.e. our log entry is what came out of GCL, not
+    // an unrelated record that happened to share part of the filter.
+    String responseBody = queryLogEntries(filter);
+    assertThat(responseBody)
+      .as("GCL readback must include our trace field %s", expectedTraceField)
+      .contains(expectedTraceField);
+    assertThat(responseBody)
+      .as("GCL readback must include the log body we wrote")
+      .contains("GET /gcloud-it-probe → 200");
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────
 
-  private static boolean queryLogEntries(String filter) throws Exception {
+  /**
+   * Queries GCL with the given filter and returns the raw response body.
+   * Throws if the request itself fails (non-2xx). Callers assert on the body.
+   */
+  private static String queryLogEntries(String filter) throws Exception {
     credentials.refreshIfExpired();
     String token = credentials.getAccessToken().getTokenValue();
 
@@ -158,16 +173,15 @@ class GclLogsReporterIT {
       .build();
 
     var response = http.send(request, HttpResponse.BodyHandlers.ofString());
-    boolean found =
-      response.statusCode() == 200 && response.body().contains("\"entries\"");
-    if (!found) {
-      System.out.printf(
-        "GCL query status=%d body=%s%n",
-        response.statusCode(),
-        response.body().substring(0, Math.min(200, response.body().length()))
+    if (response.statusCode() != 200) {
+      throw new IllegalStateException(
+        "GCL query failed: status=" +
+          response.statusCode() +
+          " body=" +
+          response.body()
       );
     }
-    return found;
+    return response.body();
   }
 
   private static String resolveProjectId() {

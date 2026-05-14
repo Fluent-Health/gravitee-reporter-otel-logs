@@ -64,13 +64,15 @@ class OtelLogsReporterTest {
     when(cfg.isReportLogs()).thenReturn(false);
     when(cfg.isReportMessageMetrics()).thenReturn(true);
 
-    reporter = new OtelLogsReporter();
-    inject(reporter, "cfg", cfg);
+    reporter = new OtelLogsReporter(cfg);
+    // The constructor instantiates real mappers; we overwrite them with mocks for the test.
     inject(reporter, "writer", writer);
     inject(reporter, "metricsMapper", metricsMapper);
     inject(reporter, "logMapper", logMapper);
     inject(reporter, "endpointMapper", endpointMapper);
     inject(reporter, "messageMapper", messageMapper);
+
+    reporter.start();
   }
 
   // ===== canHandle =====
