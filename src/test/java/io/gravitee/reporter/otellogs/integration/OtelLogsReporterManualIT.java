@@ -26,7 +26,6 @@ import io.gravitee.reporter.otellogs.OtelLogsReporter;
 import io.gravitee.reporter.otellogs.OtelTestSupport;
 import io.gravitee.reporter.otellogs.mapper.*;
 import io.gravitee.reporter.otellogs.writer.OtelLogWriter;
-import io.opentelemetry.exporter.otlp.logs.OtlpGrpcLogRecordExporter;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.net.URI;
