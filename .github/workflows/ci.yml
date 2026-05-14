@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: ["**"]
+    branches: ["main"]
   pull_request:
 
 jobs:
@@ -27,6 +27,9 @@ jobs:
 
       - name: Integration tests (TestContainers — OTel Collector + Loki)
         run: mvn verify -Pintegration-test -q
+
+      - name: E2E tests (Full Gravitee Stack)
+        run: mvn verify -Pe2e-test -Dit.test=OtelLogsReporterIT -q
 
       # Auth is placed here so the credentials file written by the action is not
       # present when prettier runs during `mvn test` above (prettier scans the
