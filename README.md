@@ -55,6 +55,8 @@ Add a `reporters.otellogs` block to `gravitee.yml`. Configuration is grouped int
 | `logs.reportHealthChecks` | boolean | `true` | Emit records for `EndpointStatus` events. |
 | `logs.reportRequestLogs` | boolean | `false` | Emit records for `Log` (request/response metadata) events. |
 | `logs.reportMessageMetrics` | boolean | `true` | Emit records for `MessageMetrics` (async/event-driven) events. |
+| `logs.reportRequestSummary` | boolean | `true` | Emit a per-request "summary" record from `Metrics` events. Set `false` (with `reportRequestLogs: true`) to suppress it and rely solely on the detailed Log-derived record — one log per request instead of two. |
+| `logs.reportHeaders` | boolean | `false` | **Dev/stage only.** When combined with `reportRequestLogs: true`, attaches request/response headers as JSON-encoded `http.request.headers` / `http.response.headers` attributes. **Keep `false` in production environments handling PII/PHI.** |
 | `logs.reportPayloads` | boolean | `false` | **Dev/stage only.** When combined with `reportRequestLogs: true`, attaches request/response bodies as `http.request.body` / `http.response.body` attributes. Bodies must already be filtered upstream by the API logging config. **Keep `false` in production environments handling PII/PHI.** |
 
 #### `traces.*` — span export
@@ -157,9 +159,9 @@ reporters:
         projectId: "your-gcp-project-id"
 ```
 
-#### Dev/stage with full request logging
+#### Dev/stage with full request logging — one combined log per request
 
-Enables full request log events (which carry method, URI, headers, status, content lengths) plus request/response bodies. Use only in non-production environments handling no PII/PHI. Bodies still pass through the upstream API logging filter first.
+Enables full request log events (which carry method, URI, headers, status, content lengths) plus request/response headers and bodies, and suppresses the redundant Metrics-derived summary so there's exactly one log per request. Use only in non-production environments handling no PII/PHI. Headers and bodies still pass through the upstream API logging filter first.
 
 ```yaml
 reporters:
@@ -167,12 +169,23 @@ reporters:
     logs:
       enabled: true
       exporter: gcloud
-      reportRequestLogs: true
-      reportPayloads: true       # do NOT enable in production
+      reportRequestLogs: true       # use the detailed Log-derived record
+      reportRequestSummary: false   # suppress the Metrics-derived summary so we get ONE log per request
+      reportHeaders: true           # include headers as JSON attributes
+      reportPayloads: true          # include bodies as attributes — do NOT enable in production
     resource:
       gcp:
         projectId: "your-gcp-project-id"
 ```
+
+Behaviour matrix:
+
+| `reportRequestLogs` | `reportRequestSummary` | Records per request |
+|---|---|---|
+| `false` (default) | `true` (default) | **1** — summary only (default) |
+| `true` | `true` (default) | **2** — summary + detailed (legacy "logs on") |
+| `true` | `false` | **1** — detailed only (recommended for dev/stage with full logging) |
+| `false` | `false` | **0** — degenerate; emits a startup WARN |
 
 ### Backward compatibility
 
