@@ -38,6 +38,7 @@ public class ResourceConfiguration {
     return serviceName;
   }
 
+  // Setters used by tests (Spring uses @Value injection, not these)
   public void setServiceName(String v) {
     this.serviceName = v;
   }
