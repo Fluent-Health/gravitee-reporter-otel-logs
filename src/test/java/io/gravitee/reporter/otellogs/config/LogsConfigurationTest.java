@@ -17,6 +17,7 @@ package io.gravitee.reporter.otellogs.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.HashMap;
 import org.junit.jupiter.api.Test;
 
 class LogsConfigurationTest {
@@ -45,5 +46,19 @@ class LogsConfigurationTest {
     assertThat(cfg.isReportHealthChecks()).isTrue();
     assertThat(cfg.isReportRequestLogs()).isFalse();
     assertThat(cfg.isReportMessageMetrics()).isTrue();
+  }
+
+  @Test
+  void headers_setter_is_defensively_copied() {
+    LogsConfiguration cfg = new LogsConfiguration();
+    HashMap<String, String> src = new HashMap<>();
+    src.put("Authorization", "Bearer tok");
+    cfg.setHeaders(src);
+    src.put("Authorization", "Bearer mutated");
+
+    assertThat(cfg.getHeaders()).containsEntry("Authorization", "Bearer tok");
+
+    cfg.setHeaders(null);
+    assertThat(cfg.getHeaders()).isEmpty();
   }
 }
