@@ -79,8 +79,8 @@ class GclLogsReporterIT {
     credentials.refreshIfExpired();
     http = HttpClient.newHttpClient();
 
-    // Use the production GclLogRecordExporter — ADC only (no credentials file)
-    var exporter = new GclLogRecordExporter(projectId, LOG_NAME, null);
+    // Use the production GclLogRecordExporter — ADC only
+    var exporter = new GclLogRecordExporter(projectId, LOG_NAME);
     writer = new OtelLogWriter(exporter, 1, 100);
   }
 

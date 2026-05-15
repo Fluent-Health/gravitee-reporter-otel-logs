@@ -72,8 +72,12 @@ public class OtelLogsReporter
   protected void doStart() throws Exception {
     log.info("OTelLogsReporter.doStart() called. Enabled={}", cfg.isEnabled());
 
-    if (!cfg.isEnabled()) {
-      log.info("OTel logs reporter is disabled");
+    if (!cfg.isEnabled() || !cfg.getLogs().isEnabled()) {
+      log.info(
+        "OTel logs reporter disabled (reporter={}, logs={})",
+        cfg.isEnabled(),
+        cfg.getLogs().isEnabled()
+      );
       return;
     }
 
@@ -81,53 +85,46 @@ public class OtelLogsReporter
       super.doStart();
 
       if (this.writer == null) {
-        LogRecordExporter exporter = buildExporter();
+        LogRecordExporter exporter = buildLogExporter();
         log.info("Built exporter: {}", exporter.getClass().getName());
         this.writer = new OtelLogWriter(
           exporter,
-          cfg.getBatchSize(),
-          cfg.getScheduledDelayMs()
-        );
-        log.info(
-          "Built writer with batchSize={} delay={}",
-          cfg.getBatchSize(),
-          cfg.getScheduledDelayMs()
+          cfg.getLogs().getBatchSize(),
+          cfg.getLogs().getScheduledDelayMs()
         );
       }
 
-      if ("gcloud".equalsIgnoreCase(cfg.getExporter())) {
-        log.info(
-          "OTel logs reporter started — exporter=gcloud project={}",
-          cfg.getGcloudProjectId()
-        );
-      } else {
-        log.info(
-          "OTel logs reporter started — exporter=otlp endpoint={}",
-          cfg.getEndpoint()
-        );
-      }
+      log.info(
+        "OTel logs reporter started — exporter={} endpoint/logName={}",
+        cfg.getLogs().getExporter(),
+        "gcloud".equalsIgnoreCase(cfg.getLogs().getExporter())
+          ? cfg.getLogs().getLogName()
+          : cfg.getLogs().getEndpoint()
+      );
     } catch (Exception e) {
       log.error("Failed to start OtelLogsReporter", e);
       throw e;
     }
   }
 
-  private LogRecordExporter buildExporter() {
-    if ("gcloud".equalsIgnoreCase(cfg.getExporter())) {
-      String projectId = cfg.getGcloudProjectId();
-      if (projectId == null || projectId.isBlank()) {
-        throw new IllegalStateException(
-          "reporters.otellogs.gcloud.projectId is required when exporter=gcloud"
-        );
-      }
-      return new GclLogRecordExporter(
-        projectId,
-        cfg.getGcloudLogName(),
-        cfg.getGcloudCredentialsFile()
+  private LogRecordExporter buildLogExporter() {
+    String exporter = cfg.getLogs().getExporter();
+    if ("none".equalsIgnoreCase(exporter)) {
+      throw new IllegalStateException(
+        "logs.exporter=none but logs.enabled=true — disable logs or pick gcloud|otlp"
       );
     }
+    if ("gcloud".equalsIgnoreCase(exporter)) {
+      String projectId = cfg.getResource().getGcpProjectId();
+      if (projectId == null || projectId.isBlank()) {
+        throw new IllegalStateException(
+          "reporters.otellogs.resource.gcp.projectId is required when logs.exporter=gcloud"
+        );
+      }
+      return new GclLogRecordExporter(projectId, cfg.getLogs().getLogName());
+    }
     // Default: Custom OTLP HTTP — uses built-in HttpClient to avoid SPI issues in Gravitee
-    return new CustomOtlpHttpLogRecordExporter(cfg.getEndpoint());
+    return new CustomOtlpHttpLogRecordExporter(cfg.getLogs().getEndpoint());
   }
 
   @Override
@@ -142,7 +139,11 @@ public class OtelLogsReporter
 
   @Override
   public void report(Reportable reportable) {
-    if (lifecycleState() != Lifecycle.State.STARTED || !cfg.isEnabled()) {
+    if (
+      lifecycleState() != Lifecycle.State.STARTED ||
+      !cfg.isEnabled() ||
+      !cfg.getLogs().isEnabled()
+    ) {
       return;
     }
 
@@ -151,12 +152,12 @@ public class OtelLogsReporter
     try {
       OtelLogRecord record = switch (reportable) {
         case Metrics metrics -> metricsMapper.map(metrics);
-        case Log l when cfg.isReportLogs() -> logMapper.map(l);
+        case Log l when cfg.getLogs().isReportRequestLogs() -> logMapper.map(l);
         case EndpointStatus es when (
-          cfg.isReportHealthChecks()
+          cfg.getLogs().isReportHealthChecks()
         ) -> endpointMapper.map(es);
         case MessageMetrics mm when (
-          cfg.isReportMessageMetrics()
+          cfg.getLogs().isReportMessageMetrics()
         ) -> messageMapper.map(mm);
         default -> null;
       };
@@ -178,12 +179,12 @@ public class OtelLogsReporter
 
   @Override
   public boolean canHandle(Reportable reportable) {
-    if (!cfg.isEnabled()) return false;
+    if (!cfg.isEnabled() || !cfg.getLogs().isEnabled()) return false;
     return switch (reportable) {
       case Metrics ignored -> true;
-      case EndpointStatus ignored -> cfg.isReportHealthChecks();
-      case Log ignored -> cfg.isReportLogs();
-      case MessageMetrics ignored -> cfg.isReportMessageMetrics();
+      case EndpointStatus ignored -> cfg.getLogs().isReportHealthChecks();
+      case Log ignored -> cfg.getLogs().isReportRequestLogs();
+      case MessageMetrics ignored -> cfg.getLogs().isReportMessageMetrics();
       default -> false;
     };
   }
