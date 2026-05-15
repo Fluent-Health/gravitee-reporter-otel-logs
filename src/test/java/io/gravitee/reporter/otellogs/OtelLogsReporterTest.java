@@ -23,6 +23,7 @@ import io.gravitee.reporter.api.v4.log.Log;
 import io.gravitee.reporter.api.v4.metric.MessageMetrics;
 import io.gravitee.reporter.otellogs.config.LogsConfiguration;
 import io.gravitee.reporter.otellogs.config.OtelLogsReporterConfiguration;
+import io.gravitee.reporter.otellogs.config.TracesConfiguration;
 import io.gravitee.reporter.otellogs.mapper.*;
 import io.gravitee.reporter.otellogs.writer.OtelLogWriter;
 import java.lang.reflect.Field;
@@ -45,6 +46,9 @@ class OtelLogsReporterTest {
   private LogsConfiguration logsCfg;
 
   @Mock
+  private TracesConfiguration tracesCfg;
+
+  @Mock
   private OtelLogWriter writer;
 
   @Mock
@@ -65,6 +69,8 @@ class OtelLogsReporterTest {
   void setUp() throws Exception {
     when(cfg.isEnabled()).thenReturn(true);
     when(cfg.getLogs()).thenReturn(logsCfg);
+    when(cfg.getTraces()).thenReturn(tracesCfg);
+    when(tracesCfg.isEnabled()).thenReturn(false);
     when(logsCfg.isEnabled()).thenReturn(true);
     when(logsCfg.isReportHealthChecks()).thenReturn(true);
     when(logsCfg.isReportRequestLogs()).thenReturn(false);
