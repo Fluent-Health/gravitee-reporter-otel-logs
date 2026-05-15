@@ -23,7 +23,10 @@ import io.gravitee.reporter.api.health.EndpointStatus;
 import io.gravitee.reporter.api.v4.log.Log;
 import io.gravitee.reporter.api.v4.metric.MessageMetrics;
 import io.gravitee.reporter.api.v4.metric.Metrics;
+import io.gravitee.reporter.otellogs.config.LogsConfiguration;
 import io.gravitee.reporter.otellogs.config.OtelLogsReporterConfiguration;
+import io.gravitee.reporter.otellogs.config.ResourceConfiguration;
+import io.gravitee.reporter.otellogs.config.TracesConfiguration;
 import java.time.Instant;
 import java.util.Map;
 
@@ -37,15 +40,22 @@ public final class OtelTestSupport {
   ).toEpochMilli();
 
   public static OtelLogsReporterConfiguration config() {
-    var cfg = new OtelLogsReporterConfiguration();
+    var logs = new LogsConfiguration();
+    logs.setEnabled(true);
+    logs.setExporter("otlp");
+    logs.setEndpoint("http://localhost:4317");
+    logs.setBatchSize(512);
+    logs.setScheduledDelayMs(5000);
+    logs.setReportHealthChecks(true);
+    logs.setReportRequestLogs(false);
+    logs.setReportMessageMetrics(true);
+
+    var traces = new TracesConfiguration();
+    var resource = new ResourceConfiguration();
+
+    var cfg = new OtelLogsReporterConfiguration(logs, traces, resource);
     cfg.setEnabled(true);
-    cfg.setEndpoint("http://localhost:4317");
     cfg.setCorrelationHeader("X-Request-ID");
-    cfg.setBatchSize(512);
-    cfg.setScheduledDelayMs(5000);
-    cfg.setReportHealthChecks(true);
-    cfg.setReportLogs(false);
-    cfg.setReportMessageMetrics(true);
     return cfg;
   }
 

@@ -21,7 +21,9 @@ import static org.mockito.Mockito.*;
 import io.gravitee.node.api.monitor.Monitor;
 import io.gravitee.reporter.api.v4.log.Log;
 import io.gravitee.reporter.api.v4.metric.MessageMetrics;
+import io.gravitee.reporter.otellogs.config.LogsConfiguration;
 import io.gravitee.reporter.otellogs.config.OtelLogsReporterConfiguration;
+import io.gravitee.reporter.otellogs.config.TracesConfiguration;
 import io.gravitee.reporter.otellogs.mapper.*;
 import io.gravitee.reporter.otellogs.writer.OtelLogWriter;
 import java.lang.reflect.Field;
@@ -39,6 +41,12 @@ class OtelLogsReporterTest {
 
   @Mock
   private OtelLogsReporterConfiguration cfg;
+
+  @Mock
+  private LogsConfiguration logsCfg;
+
+  @Mock
+  private TracesConfiguration tracesCfg;
 
   @Mock
   private OtelLogWriter writer;
@@ -60,9 +68,13 @@ class OtelLogsReporterTest {
   @BeforeEach
   void setUp() throws Exception {
     when(cfg.isEnabled()).thenReturn(true);
-    when(cfg.isReportHealthChecks()).thenReturn(true);
-    when(cfg.isReportLogs()).thenReturn(false);
-    when(cfg.isReportMessageMetrics()).thenReturn(true);
+    when(cfg.getLogs()).thenReturn(logsCfg);
+    when(cfg.getTraces()).thenReturn(tracesCfg);
+    when(tracesCfg.isEnabled()).thenReturn(false);
+    when(logsCfg.isEnabled()).thenReturn(true);
+    when(logsCfg.isReportHealthChecks()).thenReturn(true);
+    when(logsCfg.isReportRequestLogs()).thenReturn(false);
+    when(logsCfg.isReportMessageMetrics()).thenReturn(true);
 
     reporter = new OtelLogsReporter(cfg);
     // The constructor instantiates real mappers; we overwrite them with mocks for the test.
@@ -91,7 +103,7 @@ class OtelLogsReporterTest {
 
   @Test
   void endpointStatusNotHandledWhenReportHealthChecksDisabled() {
-    when(cfg.isReportHealthChecks()).thenReturn(false);
+    when(logsCfg.isReportHealthChecks()).thenReturn(false);
     assertThat(
       reporter.canHandle(OtelTestSupport.endpointStatus(true))
     ).isFalse();
@@ -104,7 +116,7 @@ class OtelLogsReporterTest {
 
   @Test
   void logHandledWhenReportLogsEnabled() {
-    when(cfg.isReportLogs()).thenReturn(true);
+    when(logsCfg.isReportRequestLogs()).thenReturn(true);
     assertThat(reporter.canHandle(OtelTestSupport.log(200))).isTrue();
   }
 
@@ -115,7 +127,7 @@ class OtelLogsReporterTest {
 
   @Test
   void messageMetricsNotHandledWhenDisabled() {
-    when(cfg.isReportMessageMetrics()).thenReturn(false);
+    when(logsCfg.isReportMessageMetrics()).thenReturn(false);
     assertThat(reporter.canHandle(OtelTestSupport.messageMetrics())).isFalse();
   }
 
@@ -180,7 +192,7 @@ class OtelLogsReporterTest {
 
   @Test
   void logIsMappedAndEmittedWhenReportLogsEnabled() {
-    when(cfg.isReportLogs()).thenReturn(true);
+    when(logsCfg.isReportRequestLogs()).thenReturn(true);
     var l = OtelTestSupport.log(200);
     var record = new OtelLogRecord(
       null,

@@ -22,133 +22,49 @@ public class OtelLogsReporterConfiguration {
   @Value("${reporters.otellogs.enabled:true}")
   private boolean enabled;
 
-  @Value("${reporters.otellogs.exporter:otlp}")
-  private String exporter;
-
-  @Value("${reporters.otellogs.endpoint:http://localhost:4317}")
-  private String endpoint;
-
   @Value("${reporters.otellogs.correlationHeader:X-Request-ID}")
   private String correlationHeader;
 
-  @Value("${reporters.otellogs.batchSize:512}")
-  private int batchSize;
+  private final LogsConfiguration logs;
+  private final TracesConfiguration traces;
+  private final ResourceConfiguration resource;
 
-  @Value("${reporters.otellogs.scheduledDelayMs:5000}")
-  private int scheduledDelayMs;
-
-  @Value("${reporters.otellogs.reportHealthChecks:true}")
-  private boolean reportHealthChecks;
-
-  @Value("${reporters.otellogs.reportLogs:false}")
-  private boolean reportLogs;
-
-  @Value("${reporters.otellogs.reportMessageMetrics:true}")
-  private boolean reportMessageMetrics;
-
-  @Value("${reporters.otellogs.gcloud.projectId:#{null}}")
-  private String gcloudProjectId;
-
-  @Value("${reporters.otellogs.gcloud.logName:gravitee-api-gateway}")
-  private String gcloudLogName;
-
-  @Value("${reporters.otellogs.gcloud.credentialsFile:#{null}}")
-  private String gcloudCredentialsFile;
+  public OtelLogsReporterConfiguration(
+    LogsConfiguration logs,
+    TracesConfiguration traces,
+    ResourceConfiguration resource
+  ) {
+    this.logs = logs;
+    this.traces = traces;
+    this.resource = resource;
+  }
 
   public boolean isEnabled() {
     return enabled;
-  }
-
-  public String getExporter() {
-    return exporter;
-  }
-
-  public String getEndpoint() {
-    return endpoint;
   }
 
   public String getCorrelationHeader() {
     return correlationHeader;
   }
 
-  public int getBatchSize() {
-    return batchSize;
+  public LogsConfiguration getLogs() {
+    return logs;
   }
 
-  public int getScheduledDelayMs() {
-    return scheduledDelayMs;
+  public TracesConfiguration getTraces() {
+    return traces;
   }
 
-  public boolean isReportHealthChecks() {
-    return reportHealthChecks;
+  public ResourceConfiguration getResource() {
+    return resource;
   }
 
-  public boolean isReportLogs() {
-    return reportLogs;
+  // Setters used by tests
+  public void setEnabled(boolean v) {
+    this.enabled = v;
   }
 
-  public boolean isReportMessageMetrics() {
-    return reportMessageMetrics;
-  }
-
-  public String getGcloudProjectId() {
-    return gcloudProjectId;
-  }
-
-  public String getGcloudLogName() {
-    return gcloudLogName;
-  }
-
-  public String getGcloudCredentialsFile() {
-    return gcloudCredentialsFile;
-  }
-
-  // Setters used by tests (Spring uses @Value injection, not these)
-  public void setEnabled(boolean enabled) {
-    this.enabled = enabled;
-  }
-
-  public void setExporter(String exporter) {
-    this.exporter = exporter;
-  }
-
-  public void setEndpoint(String endpoint) {
-    this.endpoint = endpoint;
-  }
-
-  public void setCorrelationHeader(String correlationHeader) {
-    this.correlationHeader = correlationHeader;
-  }
-
-  public void setBatchSize(int batchSize) {
-    this.batchSize = batchSize;
-  }
-
-  public void setScheduledDelayMs(int scheduledDelayMs) {
-    this.scheduledDelayMs = scheduledDelayMs;
-  }
-
-  public void setReportHealthChecks(boolean reportHealthChecks) {
-    this.reportHealthChecks = reportHealthChecks;
-  }
-
-  public void setReportLogs(boolean reportLogs) {
-    this.reportLogs = reportLogs;
-  }
-
-  public void setReportMessageMetrics(boolean reportMessageMetrics) {
-    this.reportMessageMetrics = reportMessageMetrics;
-  }
-
-  public void setGcloudProjectId(String gcloudProjectId) {
-    this.gcloudProjectId = gcloudProjectId;
-  }
-
-  public void setGcloudLogName(String gcloudLogName) {
-    this.gcloudLogName = gcloudLogName;
-  }
-
-  public void setGcloudCredentialsFile(String gcloudCredentialsFile) {
-    this.gcloudCredentialsFile = gcloudCredentialsFile;
+  public void setCorrelationHeader(String v) {
+    this.correlationHeader = v;
   }
 }

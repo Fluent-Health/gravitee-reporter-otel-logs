@@ -27,4 +27,48 @@ class GcpResourceTest {
     assertThat(r.type()).isEqualTo("global");
     assertThat(r.labels()).isEmpty();
   }
+
+  @Test
+  void fromEnvironment_returnsGlobal_whenEnvIsEmpty() {
+    var r = GcpResource.fromEnvironment("my-project", GcpEnvironment.empty());
+    assertThat(r.type()).isEqualTo("global");
+    assertThat(r.labels()).isEmpty();
+  }
+
+  @Test
+  void fromEnvironment_returnsK8sContainer_whenContainerPresent() {
+    var env = new GcpEnvironment(
+      "default",
+      "pod-abc",
+      "my-container",
+      "us-central1",
+      "my-cluster"
+    );
+    var r = GcpResource.fromEnvironment("my-project", env);
+    assertThat(r.type()).isEqualTo("k8s_container");
+    assertThat(r.labels())
+      .containsEntry("project_id", "my-project")
+      .containsEntry("location", "us-central1")
+      .containsEntry("cluster_name", "my-cluster")
+      .containsEntry("namespace_name", "default")
+      .containsEntry("pod_name", "pod-abc")
+      .containsEntry("container_name", "my-container");
+  }
+
+  @Test
+  void fromEnvironment_returnsK8sPod_whenContainerMissing() {
+    var env = new GcpEnvironment(
+      "default",
+      "pod-abc",
+      null,
+      "us-central1",
+      "my-cluster"
+    );
+    var r = GcpResource.fromEnvironment("my-project", env);
+    assertThat(r.type()).isEqualTo("k8s_pod");
+    assertThat(r.labels())
+      .containsEntry("project_id", "my-project")
+      .containsEntry("pod_name", "pod-abc")
+      .doesNotContainKey("container_name");
+  }
 }

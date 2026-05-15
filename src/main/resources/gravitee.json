@@ -2,63 +2,158 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "type": "object",
   "title": "OTel Logs Reporter",
-  "description": "Reports API gateway request logs to Google Cloud Logging via OpenTelemetry OTLP",
+  "description": "Reports API gateway request logs and traces via OpenTelemetry to Google Cloud Logging, an OTLP endpoint, or Google Cloud Trace.",
   "properties": {
     "enabled": {
       "type": "boolean",
-      "default": true
-    },
-    "exporter": {
-      "type": "string",
-      "enum": ["otlp", "gcloud"],
-      "default": "otlp",
-      "description": "Export mode: 'otlp' sends via OTLP gRPC to an OTel Collector; 'gcloud' writes directly to Cloud Logging REST API."
-    },
-    "endpoint": {
-      "type": "string",
-      "default": "http://localhost:4317",
-      "description": "OTLP gRPC endpoint (used only when exporter=otlp)."
+      "default": true,
+      "description": "Master switch for the reporter. Set to false to disable all log and trace export."
     },
     "correlationHeader": {
       "type": "string",
-      "default": "X-Request-ID"
+      "default": "X-Request-ID",
+      "description": "HTTP request header used to propagate the trace/correlation ID into log records."
     },
-    "batchSize": {
-      "type": "integer",
-      "default": 512
-    },
-    "scheduledDelayMs": {
-      "type": "integer",
-      "default": 5000
-    },
-    "reportHealthChecks": {
-      "type": "boolean",
-      "default": true
-    },
-    "reportLogs": {
-      "type": "boolean",
-      "default": false
-    },
-    "reportMessageMetrics": {
-      "type": "boolean",
-      "default": true
-    },
-    "gcloud": {
+    "logs": {
       "type": "object",
-      "description": "Google Cloud Logging settings (used only when exporter=gcloud).",
+      "title": "Log export settings",
       "properties": {
-        "projectId": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable or disable log record export."
+        },
+        "exporter": {
           "type": "string",
-          "description": "GCP project ID where logs are written. Required when exporter=gcloud."
+          "enum": ["gcloud", "otlp", "none"],
+          "default": "gcloud",
+          "description": "Export backend: 'gcloud' writes directly to Cloud Logging; 'otlp' sends via OTLP/HTTP to a collector."
         },
         "logName": {
           "type": "string",
           "default": "gravitee-api-gateway",
-          "description": "Cloud Logging log name (appears under projects/{projectId}/logs/{logName})."
+          "description": "Cloud Logging log name (used only when logs.exporter=gcloud). Appears under projects/{projectId}/logs/{logName}."
         },
-        "credentialsFile": {
+        "endpoint": {
           "type": "string",
-          "description": "Path to a service-account key JSON file. Omit to use Application Default Credentials (recommended on GKE via Workload Identity)."
+          "default": "http://localhost:4317",
+          "description": "OTLP/HTTP base URL (used only when logs.exporter=otlp). /v1/logs is appended automatically."
+        },
+        "authMode": {
+          "type": "string",
+          "enum": ["none", "gcp-adc", "static"],
+          "default": "none",
+          "description": "Authentication mode for OTLP export: 'none' — no auth header; 'gcp-adc' — Bearer token from Application Default Credentials; 'static' — headers from logs.headers."
+        },
+        "batchSize": {
+          "type": "integer",
+          "default": 512,
+          "description": "Maximum number of log records per export batch."
+        },
+        "scheduledDelayMs": {
+          "type": "integer",
+          "default": 5000,
+          "description": "Maximum delay in milliseconds between automatic batch exports."
+        },
+        "reportHealthChecks": {
+          "type": "boolean",
+          "default": true,
+          "description": "Emit a log record for each endpoint health-check result."
+        },
+        "reportRequestLogs": {
+          "type": "boolean",
+          "default": false,
+          "description": "Emit a log record for each full request log (may contain PII; disabled by default)."
+        },
+        "reportMessageMetrics": {
+          "type": "boolean",
+          "default": true,
+          "description": "Emit a log record for each message-level metric event (async/streaming APIs)."
+        },
+        "reportPayloads": {
+          "type": "boolean",
+          "default": false,
+          "description": "Include request and response bodies as http.request.body / http.response.body attributes on Log records. Requires logs.reportRequestLogs=true. Bodies must already be filtered upstream by the API logging config — this flag only controls whether what arrives is forwarded. Disabled by default; keep disabled in production environments handling PII/PHI."
+        }
+      }
+    },
+    "traces": {
+      "type": "object",
+      "title": "Trace export settings",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable or disable span export to Cloud Trace."
+        },
+        "exporter": {
+          "type": "string",
+          "enum": ["otlp"],
+          "default": "otlp",
+          "description": "Export backend for traces. Only 'otlp' is supported."
+        },
+        "endpoint": {
+          "type": "string",
+          "default": "https://telemetry.googleapis.com/v1/traces",
+          "description": "OTLP/HTTP endpoint for trace export. Defaults to the Google Cloud Trace OTLP ingestion endpoint."
+        },
+        "authMode": {
+          "type": "string",
+          "enum": ["none", "gcp-adc", "static"],
+          "default": "gcp-adc",
+          "description": "Authentication mode for trace export: 'gcp-adc' uses Application Default Credentials (recommended on GKE with Workload Identity)."
+        },
+        "batchSize": {
+          "type": "integer",
+          "default": 512,
+          "description": "Maximum number of spans per export batch."
+        },
+        "scheduledDelayMs": {
+          "type": "integer",
+          "default": 5000,
+          "description": "Maximum delay in milliseconds between automatic span batch exports."
+        },
+        "sampler": {
+          "type": "string",
+          "enum": ["parent-based-always-on", "always-on", "ratio"],
+          "default": "parent-based-always-on",
+          "description": "Sampling strategy: 'parent-based-always-on' respects an inbound W3C traceparent; 'always-on' samples every request; 'ratio' samples at traces.sampleRatio."
+        },
+        "sampleRatio": {
+          "type": "number",
+          "default": 1.0,
+          "description": "Fraction of requests to sample when traces.sampler=ratio (0.0–1.0)."
+        }
+      }
+    },
+    "resource": {
+      "type": "object",
+      "title": "OTel Resource attributes",
+      "properties": {
+        "serviceName": {
+          "type": "string",
+          "default": "gravitee-api-gateway",
+          "description": "Value of the service.name OTel resource attribute."
+        },
+        "serviceNamespace": {
+          "type": "string",
+          "default": "apim",
+          "description": "Value of the service.namespace OTel resource attribute."
+        },
+        "gcp": {
+          "type": "object",
+          "title": "GCP resource settings",
+          "properties": {
+            "projectId": {
+              "type": "string",
+              "description": "GCP project ID. Required when logs.exporter=gcloud or traces.enabled=true."
+            },
+            "autoDetect": {
+              "type": "boolean",
+              "default": true,
+              "description": "Detect GCP environment metadata (zone, cluster, pod) from the GCE metadata server."
+            }
+          }
         }
       }
     }

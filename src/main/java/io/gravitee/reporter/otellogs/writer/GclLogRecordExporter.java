@@ -16,13 +16,11 @@
 package io.gravitee.reporter.otellogs.writer;
 
 import com.google.auth.oauth2.GoogleCredentials;
-import com.google.auth.oauth2.ServiceAccountCredentials;
 import com.google.gson.Gson;
 import io.opentelemetry.api.logs.Severity;
 import io.opentelemetry.sdk.common.CompletableResultCode;
 import io.opentelemetry.sdk.logs.data.LogRecordData;
 import io.opentelemetry.sdk.logs.export.LogRecordExporter;
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -43,8 +41,9 @@ import org.slf4j.LoggerFactory;
  * Exports OTel log records directly to Google Cloud Logging via the REST API v2
  * ({@code entries:write}), without requiring an OTel Collector intermediary.
  *
- * <p>Authentication uses Application Default Credentials by default; an optional
- * service-account key file path may be supplied via {@code credentialsFile}.
+ * <p>Authentication uses Application Default Credentials (ADC). In GKE this is
+ * satisfied automatically by Workload Identity; locally, run
+ * {@code gcloud auth application-default login}.
  *
  * <p>The OTel SDK's {@code BatchLogRecordProcessor} drives batching and retry —
  * this exporter handles only the HTTP write for each batch.
@@ -70,14 +69,10 @@ public class GclLogRecordExporter implements LogRecordExporter {
   private final HttpClient http;
   private final GcpResource resource;
 
-  public GclLogRecordExporter(
-    String projectId,
-    String logName,
-    String credentialsFile
-  ) {
+  public GclLogRecordExporter(String projectId, String logName) {
     this.projectId = projectId;
     this.logName = logName;
-    this.credentials = loadCredentials(credentialsFile);
+    this.credentials = loadAdc();
     this.http = HttpClient.newHttpClient();
     this.resource = GcpResource.detect(projectId);
     log.info(
@@ -180,6 +175,7 @@ public class GclLogRecordExporter implements LogRecordExporter {
         switch (key.getKey()) {
           case "http.method" -> httpRequest.put("requestMethod", value);
           case "http.status" -> httpRequest.put("status", value);
+          case "http.url" -> httpRequest.put("requestUrl", value);
           case "http.latency_ms" -> httpRequest.put(
             "latency",
             formatLatency(((Number) value).longValue())
@@ -254,20 +250,14 @@ public class GclLogRecordExporter implements LogRecordExporter {
     };
   }
 
-  private static GoogleCredentials loadCredentials(String credentialsFile) {
+  private static GoogleCredentials loadAdc() {
     try {
-      GoogleCredentials creds;
-      if (credentialsFile != null && !credentialsFile.isBlank()) {
-        try (var stream = new FileInputStream(credentialsFile)) {
-          creds = ServiceAccountCredentials.fromStream(stream);
-        }
-      } else {
-        creds = GoogleCredentials.getApplicationDefault();
-      }
-      return creds.createScoped(CLOUD_PLATFORM_SCOPE);
+      return GoogleCredentials.getApplicationDefault().createScoped(
+        CLOUD_PLATFORM_SCOPE
+      );
     } catch (IOException e) {
       throw new IllegalStateException(
-        "Failed to load GCP credentials: " + e.getMessage(),
+        "Failed to load Application Default Credentials: " + e.getMessage(),
         e
       );
     }
