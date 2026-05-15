@@ -175,6 +175,7 @@ public class GclLogRecordExporter implements LogRecordExporter {
         switch (key.getKey()) {
           case "http.method" -> httpRequest.put("requestMethod", value);
           case "http.status" -> httpRequest.put("status", value);
+          case "http.url" -> httpRequest.put("requestUrl", value);
           case "http.latency_ms" -> httpRequest.put(
             "latency",
             formatLatency(((Number) value).longValue())

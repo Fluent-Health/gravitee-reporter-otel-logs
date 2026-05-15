@@ -106,6 +106,10 @@ public class MetricsToLogRecordMapper {
       m.getHttpMethod().name()
     );
     b.put(AttributeKey.longKey("http.status"), (long) m.getStatus());
+    String sanitizedUri = OtelLabels.sanitizePath(m.getUri());
+    if (sanitizedUri != null) {
+      b.put(AttributeKey.stringKey("http.url"), sanitizedUri);
+    }
     b.put(
       AttributeKey.longKey("http.latency_ms"),
       m.getGatewayResponseTimeMs()
