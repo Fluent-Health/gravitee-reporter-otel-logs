@@ -30,7 +30,7 @@ class LogToLogRecordMapperTest {
 
   @BeforeEach
   void setUp() {
-    mapper = new LogToLogRecordMapper();
+    mapper = new LogToLogRecordMapper(false);
   }
 
   @Test
@@ -123,5 +123,59 @@ class LogToLogRecordMapperTest {
     var record = mapper.map(OtelTestSupport.logWithNullUri(200));
     assertThat(record.body()).doesNotContain("null");
     assertThat(record.body()).contains("-");
+  }
+
+  @Test
+  void payloadsAreOmittedWhenFlagDisabled() {
+    var log = OtelTestSupport.log(200);
+    log.getEntrypointRequest().setBody("{\"hello\":\"world\"}");
+    log.getEntrypointResponse().setBody("{\"ok\":true}");
+
+    var record = mapper.map(log);
+
+    assertThat(
+      record.attributes().get(AttributeKey.stringKey("http.request.body"))
+    )
+      .as("request body must be absent when reportPayloads=false")
+      .isNull();
+    assertThat(
+      record.attributes().get(AttributeKey.stringKey("http.response.body"))
+    )
+      .as("response body must be absent when reportPayloads=false")
+      .isNull();
+  }
+
+  @Test
+  void payloadsAreEmittedWhenFlagEnabled() {
+    var enabledMapper = new LogToLogRecordMapper(true);
+    var log = OtelTestSupport.log(200);
+    log.getEntrypointRequest().setBody("{\"hello\":\"world\"}");
+    log.getEntrypointResponse().setBody("{\"ok\":true}");
+
+    var record = enabledMapper.map(log);
+
+    assertThat(
+      record.attributes().get(AttributeKey.stringKey("http.request.body"))
+    ).isEqualTo("{\"hello\":\"world\"}");
+    assertThat(
+      record.attributes().get(AttributeKey.stringKey("http.response.body"))
+    ).isEqualTo("{\"ok\":true}");
+  }
+
+  @Test
+  void emptyOrNullPayloadsAreSkippedEvenWhenFlagEnabled() {
+    var enabledMapper = new LogToLogRecordMapper(true);
+    var log = OtelTestSupport.log(200);
+    // request body left null; response body explicitly empty
+    log.getEntrypointResponse().setBody("");
+
+    var record = enabledMapper.map(log);
+
+    assertThat(
+      record.attributes().get(AttributeKey.stringKey("http.request.body"))
+    ).isNull();
+    assertThat(
+      record.attributes().get(AttributeKey.stringKey("http.response.body"))
+    ).isNull();
   }
 }

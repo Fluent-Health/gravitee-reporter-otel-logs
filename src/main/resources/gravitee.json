@@ -69,6 +69,11 @@
           "type": "boolean",
           "default": true,
           "description": "Emit a log record for each message-level metric event (async/streaming APIs)."
+        },
+        "reportPayloads": {
+          "type": "boolean",
+          "default": false,
+          "description": "Include request and response bodies as http.request.body / http.response.body attributes on Log records. Requires logs.reportRequestLogs=true. Bodies must already be filtered upstream by the API logging config — this flag only controls whether what arrives is forwarded. Disabled by default; keep disabled in production environments handling PII/PHI."
         }
       }
     },

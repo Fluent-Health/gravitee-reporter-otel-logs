@@ -75,7 +75,7 @@ public class OtelLogsReporter
     log.info("OTelLogsReporter constructor called with cfg: {}", cfg);
     this.cfg = cfg;
     this.metricsMapper = new MetricsToLogRecordMapper(cfg);
-    this.logMapper = new LogToLogRecordMapper();
+    this.logMapper = new LogToLogRecordMapper(cfg.getLogs().isReportPayloads());
     this.endpointMapper = new EndpointStatusToLogRecordMapper();
     this.messageMapper = new MessageMetricsToLogRecordMapper();
   }

@@ -77,6 +77,13 @@ public class LogsConfiguration {
   )
   private boolean reportMessageMetrics;
 
+  // Forward request/response bodies inside Log events. Default-deny: bodies
+  // are only emitted when this flag AND reportRequestLogs are both true.
+  // Whatever bodies arrive here have already been filtered upstream by the
+  // API-level logging config — this flag does NOT bypass that filter.
+  @Value("${reporters.otellogs.logs.reportPayloads:false}")
+  private boolean reportPayloads;
+
   public boolean isEnabled() {
     return enabled;
   }
@@ -164,5 +171,13 @@ public class LogsConfiguration {
 
   public void setReportMessageMetrics(boolean v) {
     this.reportMessageMetrics = v;
+  }
+
+  public boolean isReportPayloads() {
+    return reportPayloads;
+  }
+
+  public void setReportPayloads(boolean v) {
+    this.reportPayloads = v;
   }
 }

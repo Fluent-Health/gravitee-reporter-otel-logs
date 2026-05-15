@@ -32,6 +32,12 @@ import io.opentelemetry.api.logs.Severity;
  */
 public class LogToLogRecordMapper {
 
+  private final boolean includePayloads;
+
+  public LogToLogRecordMapper(boolean includePayloads) {
+    this.includePayloads = includePayloads;
+  }
+
   public OtelLogRecord map(Log log) {
     Request req = log.getEntrypointRequest();
     Response resp = log.getEntrypointResponse();
@@ -68,6 +74,14 @@ public class LogToLogRecordMapper {
         AttributeKey.longKey("log.response.headers_count"),
         (long) resp.getHeaders().size()
       );
+    }
+    if (includePayloads) {
+      if (req != null && req.getBody() != null && !req.getBody().isEmpty()) {
+        b.put(AttributeKey.stringKey("http.request.body"), req.getBody());
+      }
+      if (resp != null && resp.getBody() != null && !resp.getBody().isEmpty()) {
+        b.put(AttributeKey.stringKey("http.response.body"), resp.getBody());
+      }
     }
 
     return new OtelLogRecord(
