@@ -74,6 +74,16 @@
           "type": "boolean",
           "default": false,
           "description": "Include request and response bodies as http.request.body / http.response.body attributes on Log records. Requires logs.reportRequestLogs=true. Bodies must already be filtered upstream by the API logging config — this flag only controls whether what arrives is forwarded. Disabled by default; keep disabled in production environments handling PII/PHI."
+        },
+        "reportHeaders": {
+          "type": "boolean",
+          "default": false,
+          "description": "Include request and response headers as JSON-encoded http.request.headers / http.response.headers attributes on Log records. Requires logs.reportRequestLogs=true. Same compliance posture as reportPayloads: headers commonly contain auth tokens, so keep disabled in production environments handling PII/PHI."
+        },
+        "reportRequestSummary": {
+          "type": "boolean",
+          "default": true,
+          "description": "Emit a per-request 'summary' log record from Metrics events. Default true preserves existing behaviour. Set false (combined with reportRequestLogs=true) to suppress the summary and rely solely on the detailed Log-derived record — one log per request instead of two."
         }
       }
     },

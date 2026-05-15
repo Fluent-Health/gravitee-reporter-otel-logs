@@ -75,7 +75,10 @@ public class OtelLogsReporter
     log.info("OTelLogsReporter constructor called with cfg: {}", cfg);
     this.cfg = cfg;
     this.metricsMapper = new MetricsToLogRecordMapper(cfg);
-    this.logMapper = new LogToLogRecordMapper(cfg.getLogs().isReportPayloads());
+    this.logMapper = new LogToLogRecordMapper(
+      cfg.getLogs().isReportPayloads(),
+      cfg.getLogs().isReportHeaders()
+    );
     this.endpointMapper = new EndpointStatusToLogRecordMapper();
     this.messageMapper = new MessageMetricsToLogRecordMapper();
   }
@@ -98,6 +101,16 @@ public class OtelLogsReporter
         cfg.getLogs().getBatchSize(),
         cfg.getLogs().getScheduledDelayMs()
       );
+      // Degenerate config: logs are enabled but every per-request source is
+      // suppressed. Operator probably forgot to set reportRequestLogs=true.
+      if (
+        !cfg.getLogs().isReportRequestSummary() &&
+        !cfg.getLogs().isReportRequestLogs()
+      ) {
+        log.warn(
+          "logs.enabled=true but both reportRequestSummary=false and reportRequestLogs=false — no per-request log records will be emitted"
+        );
+      }
     }
 
     if (cfg.getTraces().isEnabled() && this.traceWriter == null) {
@@ -196,7 +209,9 @@ public class OtelLogsReporter
       if (writer == null) return;
 
       OtelLogRecord record = switch (reportable) {
-        case Metrics m -> metricsMapper.map(m);
+        case Metrics m when (
+          cfg.getLogs().isReportRequestSummary()
+        ) -> metricsMapper.map(m);
         case Log l when cfg.getLogs().isReportRequestLogs() -> logMapper.map(l);
         case EndpointStatus es when (
           cfg.getLogs().isReportHealthChecks()

@@ -75,6 +75,7 @@ class OtelLogsReporterTest {
     when(logsCfg.isReportHealthChecks()).thenReturn(true);
     when(logsCfg.isReportRequestLogs()).thenReturn(false);
     when(logsCfg.isReportMessageMetrics()).thenReturn(true);
+    when(logsCfg.isReportRequestSummary()).thenReturn(true);
 
     reporter = new OtelLogsReporter(cfg);
     // The constructor instantiates real mappers; we overwrite them with mocks for the test.
@@ -205,6 +206,41 @@ class OtelLogsReporterTest {
       io.opentelemetry.api.common.Attributes.empty()
     );
     when(logMapper.map(l)).thenReturn(record);
+    reporter.report(l);
+    verify(writer).emit(record);
+  }
+
+  @Test
+  void metricsRecordSuppressedWhenReportRequestSummaryDisabled() {
+    when(logsCfg.isReportRequestSummary()).thenReturn(false);
+    reporter.report(OtelTestSupport.metrics(200));
+    verify(metricsMapper, never()).map(any());
+    verify(writer, never()).emit(any());
+  }
+
+  @Test
+  void onlyLogRecordEmittedWhenSummarySuppressedAndRequestLogsEnabled() {
+    // Combined config: detailed Log-derived record only.
+    when(logsCfg.isReportRequestSummary()).thenReturn(false);
+    when(logsCfg.isReportRequestLogs()).thenReturn(true);
+
+    var l = OtelTestSupport.log(200);
+    var record = new OtelLogRecord(
+      null,
+      null,
+      null,
+      null,
+      io.opentelemetry.api.logs.Severity.INFO,
+      0L,
+      "body",
+      io.opentelemetry.api.common.Attributes.empty()
+    );
+    when(logMapper.map(l)).thenReturn(record);
+
+    // Metrics event: suppressed
+    reporter.report(OtelTestSupport.metrics(200));
+    verify(metricsMapper, never()).map(any());
+    // Log event: emitted
     reporter.report(l);
     verify(writer).emit(record);
   }
