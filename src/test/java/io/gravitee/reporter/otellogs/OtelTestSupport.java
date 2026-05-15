@@ -49,6 +49,7 @@ public final class OtelTestSupport {
     logs.setReportHealthChecks(true);
     logs.setReportRequestLogs(false);
     logs.setReportMessageMetrics(true);
+    logs.setReportRequestSummary(true);
 
     var traces = new TracesConfiguration();
     var resource = new ResourceConfiguration();
