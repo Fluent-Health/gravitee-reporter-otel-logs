@@ -212,6 +212,33 @@ class GcpTraceAndLogReporterIT {
       .as("response side must be present (status from outbound response)")
       .isEqualTo(200);
 
+    // Headers and bodies should also be present on the same record (the
+    // reportHeaders + reportPayloads flags are now wired into the Metrics
+    // summary path, not just the Log-derived detail path). These land in
+    // jsonPayload via the exporter's default attribute routing.
+    @SuppressWarnings("unchecked")
+    Map<String, Object> jsonPayload = (Map<String, Object>) entries
+      .get(0)
+      .get("jsonPayload");
+    assertThat(jsonPayload)
+      .as("jsonPayload should be present on the record")
+      .isNotNull();
+    assertThat((String) jsonPayload.get("http.request.body"))
+      .as("request body must appear when reportPayloads=true")
+      .isEqualTo("{\"q\":\"hello\"}");
+    assertThat((String) jsonPayload.get("http.response.body"))
+      .as("response body must appear when reportPayloads=true")
+      .isEqualTo("{\"ok\":true}");
+    assertThat((String) jsonPayload.get("http.request.headers"))
+      .as("request headers must appear as JSON when reportHeaders=true")
+      .contains("\"Content-Type\"")
+      .contains("\"X-Tenant\"")
+      .contains("\"acme\"");
+    assertThat((String) jsonPayload.get("http.response.headers"))
+      .as("response headers must appear as JSON when reportHeaders=true")
+      .contains("\"Content-Type\"")
+      .contains("\"application/json\"");
+
     System.out.println(
       """
 
@@ -234,6 +261,8 @@ class GcpTraceAndLogReporterIT {
     logs.setScheduledDelayMs(100);
     logs.setReportRequestLogs(false); // Log event path suppressed
     logs.setReportRequestSummary(true); // Metrics-derived summary emitted
+    logs.setReportHeaders(true); // include req/resp headers on the summary
+    logs.setReportPayloads(true); // include req/resp bodies on the summary
     logs.setReportHealthChecks(false);
     logs.setReportMessageMetrics(false);
 
@@ -266,10 +295,32 @@ class GcpTraceAndLogReporterIT {
     Metrics m = mock(Metrics.class);
     Log lg = mock(Log.class);
     Request req = mock(Request.class);
-    HttpHeaders h = mock(HttpHeaders.class);
-    when(h.get("traceparent")).thenReturn(traceparent);
-    when(req.getHeaders()).thenReturn(h);
+    Response resp = mock(Response.class);
+
+    HttpHeaders reqH = mock(HttpHeaders.class);
+    when(reqH.get("traceparent")).thenReturn(traceparent);
+    when(reqH.isEmpty()).thenReturn(false);
+    when(reqH.toListValuesMap()).thenReturn(
+      java.util.Map.of(
+        "Content-Type",
+        java.util.List.of("application/json"),
+        "X-Tenant",
+        java.util.List.of("acme")
+      )
+    );
+    when(req.getHeaders()).thenReturn(reqH);
+    when(req.getBody()).thenReturn("{\"q\":\"hello\"}");
+
+    HttpHeaders respH = mock(HttpHeaders.class);
+    when(respH.isEmpty()).thenReturn(false);
+    when(respH.toListValuesMap()).thenReturn(
+      java.util.Map.of("Content-Type", java.util.List.of("application/json"))
+    );
+    when(resp.getHeaders()).thenReturn(respH);
+    when(resp.getBody()).thenReturn("{\"ok\":true}");
+
     when(lg.getEntrypointRequest()).thenReturn(req);
+    when(lg.getEntrypointResponse()).thenReturn(resp);
     when(m.getLog()).thenReturn(lg);
     when(m.getHttpMethod()).thenReturn(HttpMethod.GET);
     when(m.getStatus()).thenReturn(200);

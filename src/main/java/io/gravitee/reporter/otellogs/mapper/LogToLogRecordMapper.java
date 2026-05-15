@@ -15,8 +15,6 @@
  */
 package io.gravitee.reporter.otellogs.mapper;
 
-import com.google.gson.Gson;
-import io.gravitee.gateway.api.http.HttpHeaders;
 import io.gravitee.reporter.api.common.Request;
 import io.gravitee.reporter.api.common.Response;
 import io.gravitee.reporter.api.v4.log.Log;
@@ -43,8 +41,6 @@ import io.opentelemetry.api.logs.Severity;
  * sensitive — this mapper does not scrub.
  */
 public class LogToLogRecordMapper {
-
-  private static final Gson GSON = new Gson();
 
   private final boolean includePayloads;
   private final boolean includeHeaders;
@@ -98,13 +94,13 @@ public class LogToLogRecordMapper {
       );
     }
     if (includeHeaders) {
-      String reqHeadersJson = headersAsJson(
+      String reqHeadersJson = OtelLabels.headersAsJson(
         req != null ? req.getHeaders() : null
       );
       if (reqHeadersJson != null) {
         b.put(AttributeKey.stringKey("http.request.headers"), reqHeadersJson);
       }
-      String respHeadersJson = headersAsJson(
+      String respHeadersJson = OtelLabels.headersAsJson(
         resp != null ? resp.getHeaders() : null
       );
       if (respHeadersJson != null) {
@@ -130,10 +126,5 @@ public class LogToLogRecordMapper {
       body,
       b.build()
     );
-  }
-
-  private static String headersAsJson(HttpHeaders headers) {
-    if (headers == null || headers.isEmpty()) return null;
-    return GSON.toJson(headers.toListValuesMap());
   }
 }

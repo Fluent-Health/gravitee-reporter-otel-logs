@@ -268,4 +268,107 @@ class MetricsToLogRecordMapperTest {
         .get(AttributeKey.longKey("entrypoint.response.content_length"))
     ).isNull();
   }
+
+  // ===== reportHeaders / reportPayloads on the summary path =====
+
+  @Test
+  void headersAndBodiesAreOmittedByDefault() {
+    // Default constructor flips both flags off — the existing tests above
+    // implicitly cover this, but be explicit so an accidental default flip
+    // shows up here.
+    var record = mapper.map(
+      OtelTestSupport.metricsWithFullPayloads(
+        200,
+        Map.of("Content-Type", "application/json", "X-Tenant", "acme"),
+        "{\"q\":\"hello\"}",
+        Map.of("Content-Type", "application/json"),
+        "{\"ok\":true}"
+      )
+    );
+    assertThat(
+      record.attributes().get(AttributeKey.stringKey("http.request.headers"))
+    ).isNull();
+    assertThat(
+      record.attributes().get(AttributeKey.stringKey("http.response.headers"))
+    ).isNull();
+    assertThat(
+      record.attributes().get(AttributeKey.stringKey("http.request.body"))
+    ).isNull();
+    assertThat(
+      record.attributes().get(AttributeKey.stringKey("http.response.body"))
+    ).isNull();
+  }
+
+  @Test
+  void headersAreEmittedAsJsonOnSummaryWhenFlagEnabled() {
+    var enabledMapper = new MetricsToLogRecordMapper(
+      OtelTestSupport.config(),
+      false,
+      true
+    );
+    var record = enabledMapper.map(
+      OtelTestSupport.metricsWithFullPayloads(
+        200,
+        Map.of("Content-Type", "application/json", "X-Tenant", "acme"),
+        null,
+        Map.of("Content-Type", "application/json"),
+        null
+      )
+    );
+
+    String reqJson = record
+      .attributes()
+      .get(AttributeKey.stringKey("http.request.headers"));
+    String respJson = record
+      .attributes()
+      .get(AttributeKey.stringKey("http.response.headers"));
+
+    assertThat(reqJson)
+      .contains("\"Content-Type\"")
+      .contains("\"X-Tenant\"")
+      .contains("\"acme\"");
+    assertThat(respJson).contains("\"Content-Type\"");
+  }
+
+  @Test
+  void bodiesAreEmittedOnSummaryWhenFlagEnabled() {
+    var enabledMapper = new MetricsToLogRecordMapper(
+      OtelTestSupport.config(),
+      true,
+      false
+    );
+    var record = enabledMapper.map(
+      OtelTestSupport.metricsWithFullPayloads(
+        200,
+        Map.of(),
+        "{\"q\":\"hello\"}",
+        Map.of(),
+        "{\"ok\":true}"
+      )
+    );
+
+    assertThat(
+      record.attributes().get(AttributeKey.stringKey("http.request.body"))
+    ).isEqualTo("{\"q\":\"hello\"}");
+    assertThat(
+      record.attributes().get(AttributeKey.stringKey("http.response.body"))
+    ).isEqualTo("{\"ok\":true}");
+  }
+
+  @Test
+  void summaryWithNullLogObjectIsSafeWhenFlagsEnabled() {
+    var enabledMapper = new MetricsToLogRecordMapper(
+      OtelTestSupport.config(),
+      true,
+      true
+    );
+    // metrics(200) has no embedded Log → flags must be no-ops, not NPE.
+    var record = enabledMapper.map(OtelTestSupport.metrics(200));
+    assertThat(
+      record.attributes().get(AttributeKey.stringKey("http.request.headers"))
+    ).isNull();
+    assertThat(
+      record.attributes().get(AttributeKey.stringKey("http.request.body"))
+    ).isNull();
+  }
 }

@@ -16,6 +16,8 @@
 package io.gravitee.reporter.otellogs.mapper;
 
 import io.gravitee.gateway.api.http.HttpHeaders;
+import io.gravitee.reporter.api.common.Request;
+import io.gravitee.reporter.api.common.Response;
 import io.gravitee.reporter.api.v4.log.Log;
 import io.gravitee.reporter.api.v4.metric.Metrics;
 import io.gravitee.reporter.otellogs.config.OtelLogsReporterConfiguration;
@@ -27,12 +29,25 @@ public class MetricsToLogRecordMapper {
 
   private final OtelLogsReporterConfiguration config;
   private final TraceContextResolver traceResolver;
+  private final boolean includePayloads;
+  private final boolean includeHeaders;
 
-  public MetricsToLogRecordMapper(OtelLogsReporterConfiguration config) {
+  public MetricsToLogRecordMapper(
+    OtelLogsReporterConfiguration config,
+    boolean includePayloads,
+    boolean includeHeaders
+  ) {
     this.config = config;
     this.traceResolver = new TraceContextResolver(
       config.getCorrelationHeader()
     );
+    this.includePayloads = includePayloads;
+    this.includeHeaders = includeHeaders;
+  }
+
+  /** Convenience constructor for tests + back-compat: both flags off. */
+  public MetricsToLogRecordMapper(OtelLogsReporterConfiguration config) {
+    this(config, false, false);
   }
 
   public OtelLogRecord map(Metrics m) {
@@ -157,6 +172,41 @@ public class MetricsToLogRecordMapper {
     }
     if (m.getErrorMessage() != null) {
       b.put(AttributeKey.stringKey("error.message"), m.getErrorMessage());
+    }
+    if (includeHeaders || includePayloads) {
+      // Headers and bodies live on the embedded Log's entrypoint sub-objects
+      // — same place LogToLogRecordMapper reads them from. Whatever arrives
+      // here has already been filtered upstream by the API logging config.
+      Log lg = m.getLog();
+      Request req = lg != null ? lg.getEntrypointRequest() : null;
+      Response resp = lg != null ? lg.getEntrypointResponse() : null;
+      if (includeHeaders) {
+        String reqHeadersJson = OtelLabels.headersAsJson(
+          req != null ? req.getHeaders() : null
+        );
+        if (reqHeadersJson != null) {
+          b.put(AttributeKey.stringKey("http.request.headers"), reqHeadersJson);
+        }
+        String respHeadersJson = OtelLabels.headersAsJson(
+          resp != null ? resp.getHeaders() : null
+        );
+        if (respHeadersJson != null) {
+          b.put(
+            AttributeKey.stringKey("http.response.headers"),
+            respHeadersJson
+          );
+        }
+      }
+      if (includePayloads) {
+        if (req != null && req.getBody() != null && !req.getBody().isEmpty()) {
+          b.put(AttributeKey.stringKey("http.request.body"), req.getBody());
+        }
+        if (
+          resp != null && resp.getBody() != null && !resp.getBody().isEmpty()
+        ) {
+          b.put(AttributeKey.stringKey("http.response.body"), resp.getBody());
+        }
+      }
     }
     return b.build();
   }

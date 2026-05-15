@@ -56,8 +56,8 @@ Add a `reporters.otellogs` block to `gravitee.yml`. Configuration is grouped int
 | `logs.reportRequestLogs` | boolean | `false` | Emit records for `Log` (request/response metadata) events. |
 | `logs.reportMessageMetrics` | boolean | `true` | Emit records for `MessageMetrics` (async/event-driven) events. |
 | `logs.reportRequestSummary` | boolean | `true` | Emit a per-request "summary" record from `Metrics` events. Set `false` (with `reportRequestLogs: true`) to suppress it and rely solely on the detailed Log-derived record — one log per request instead of two. |
-| `logs.reportHeaders` | boolean | `false` | **Dev/stage only.** When combined with `reportRequestLogs: true`, attaches request/response headers as JSON-encoded `http.request.headers` / `http.response.headers` attributes. **Keep `false` in production environments handling PII/PHI.** |
-| `logs.reportPayloads` | boolean | `false` | **Dev/stage only.** When combined with `reportRequestLogs: true`, attaches request/response bodies as `http.request.body` / `http.response.body` attributes. Bodies must already be filtered upstream by the API logging config. **Keep `false` in production environments handling PII/PHI.** |
+| `logs.reportHeaders` | boolean | `false` | **Dev/stage only.** Attaches request/response headers as JSON-encoded `http.request.headers` / `http.response.headers` attributes on every log record that has them — summary (Metrics-derived) and detail (Log-derived) alike. **Keep `false` in production environments handling PII/PHI.** |
+| `logs.reportPayloads` | boolean | `false` | **Dev/stage only.** Attaches request/response bodies as `http.request.body` / `http.response.body` attributes on every log record that has them — summary and detail alike. Bodies must already be filtered upstream by the API logging config. **Keep `false` in production environments handling PII/PHI.** |
 
 #### `traces.*` — span export
 
@@ -373,7 +373,9 @@ Attributes by event type:
 
 **MessageMetrics (async/event-driven APIs):** `api.name`, `message.count`, `message.error_count`, `message.content_length`
 
-**Log (request/response metadata, opt-in via `logs.reportRequestLogs: true`):** `api.name`, `http.method`, `http.status`, `log.request.headers_count`, `log.response.headers_count`. When `logs.reportPayloads: true` is **also** set (dev/stage only), request and response bodies are attached as `http.request.body` and `http.response.body`.
+**Log (request/response metadata, opt-in via `logs.reportRequestLogs: true`):** `api.name`, `http.method`, `http.status`, `log.request.headers_count`, `log.response.headers_count`.
+
+**Headers and bodies (`logs.reportHeaders` / `logs.reportPayloads`, both dev/stage only):** when these flags are set, **every** log record that has access to entrypoint headers and bodies — both Metrics-derived summary records and Log-derived detail records — carries `http.request.headers` / `http.response.headers` (JSON-encoded) and `http.request.body` / `http.response.body` (raw string) attributes.
 
 #### Traces signal
 
