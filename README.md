@@ -30,73 +30,153 @@ To load the plugin into a local Gravitee gateway, copy the ZIP to the gateway's 
 
 ## Configuration
 
-Add a `reporters.otellogs` block to `gravitee.yml`. The `exporter` property selects the mode; all other properties are shared unless noted.
+Add a `reporters.otellogs` block to `gravitee.yml`. Configuration is grouped into three subtrees — `logs`, `traces`, `resource` — plus a few top-level keys. The two signals are independently enabled.
 
 ### Property reference
 
+#### Top-level
+
 | Property | Type | Default | Description |
 |---|---|---|---|
-| `enabled` | boolean | `true` | Enables or disables the reporter entirely. |
-| `exporter` | string | `otlp` | Export mode: `otlp` (via OTel Collector) or `gcloud` (direct to Cloud Logging REST API). |
-| `endpoint` | string | `http://localhost:4317` | OTLP gRPC endpoint. Used only when `exporter: otlp`. |
-| `correlationHeader` | string | `X-Request-ID` | Request header used as the trace ID when no W3C `traceparent` is present. |
-| `batchSize` | integer | `512` | Maximum number of log records per export batch. |
-| `scheduledDelayMs` | integer | `5000` | Milliseconds between batch export attempts. |
-| `reportHealthChecks` | boolean | `true` | Emit records for `EndpointStatus` (health check) events. |
-| `reportLogs` | boolean | `false` | Emit records for `Log` (full request/response metadata) events. Disable to avoid verbose output. |
-| `reportMessageMetrics` | boolean | `true` | Emit records for `MessageMetrics` (async/event-driven API) events. |
-| `gcloud.projectId` | string | — | GCP project ID. **Required** when `exporter: gcloud`. |
-| `gcloud.logName` | string | `gravitee-api-gateway` | Cloud Logging log name (under `projects/{projectId}/logs/{logName}`). Used only when `exporter: gcloud`. |
-| `gcloud.credentialsFile` | string | — | Path to a service-account key JSON file. Omit to use Application Default Credentials (recommended on GKE via Workload Identity). Used only when `exporter: gcloud`. |
+| `enabled` | boolean | `true` | Master switch. Set `false` to disable both signals. |
+| `correlationHeader` | string | `X-Request-ID` | Request header used as the trace ID when no W3C `traceparent` is present. Value is SHA-256-hashed and truncated to 16 bytes to form a valid trace ID. |
 
-### OTLP mode (via OTel Collector)
+#### `logs.*` — log export
 
-Routes records through an OpenTelemetry Collector that translates them to Cloud Logging. Use this if you already operate a collector fleet, need multi-destination fanout, or want the Collector to handle credential management.
+| Property | Type | Default | Description |
+|---|---|---|---|
+| `logs.enabled` | boolean | `true` | Enable log record export. |
+| `logs.exporter` | string | `gcloud` | `gcloud` (direct to Cloud Logging REST), `otlp` (OTLP/HTTP to a collector), or `none`. |
+| `logs.logName` | string | `gravitee-api-gateway` | Cloud Logging log name. Used only when `logs.exporter: gcloud`. |
+| `logs.endpoint` | string | `http://localhost:4317` | OTLP/HTTP base URL. `/v1/logs` is appended automatically. Used only when `logs.exporter: otlp`. |
+| `logs.authMode` | string | `none` | OTLP auth mode: `none`, `gcp-adc` (refreshing ADC bearer per export), or `static` (use `logs.headers`). |
+| `logs.batchSize` | integer | `512` | Maximum records per export batch. |
+| `logs.scheduledDelayMs` | integer | `5000` | Maximum delay between batch exports (ms). |
+| `logs.reportHealthChecks` | boolean | `true` | Emit records for `EndpointStatus` events. |
+| `logs.reportRequestLogs` | boolean | `false` | Emit records for `Log` (request/response metadata) events. |
+| `logs.reportMessageMetrics` | boolean | `true` | Emit records for `MessageMetrics` (async/event-driven) events. |
+| `logs.reportPayloads` | boolean | `false` | **Dev/stage only.** When combined with `reportRequestLogs: true`, attaches request/response bodies as `http.request.body` / `http.response.body` attributes. Bodies must already be filtered upstream by the API logging config. **Keep `false` in production environments handling PII/PHI.** |
+
+#### `traces.*` — span export
+
+| Property | Type | Default | Description |
+|---|---|---|---|
+| `traces.enabled` | boolean | `false` | Enable span export. Opt-in. |
+| `traces.exporter` | string | `otlp` | Only `otlp` is supported. |
+| `traces.endpoint` | string | `https://telemetry.googleapis.com/v1/traces` | OTLP/HTTP endpoint. Default targets Cloud Trace's native OTLP ingestion. |
+| `traces.authMode` | string | `gcp-adc` | OTLP auth mode: `none`, `gcp-adc`, or `static`. |
+| `traces.batchSize` | integer | `512` | Maximum spans per export batch. |
+| `traces.scheduledDelayMs` | integer | `5000` | Maximum delay between batch exports (ms). |
+| `traces.sampler` | string | `parent-based-always-on` | `parent-based-always-on` respects inbound W3C `traceparent`; `always-on` samples every request; `ratio` samples at `traces.sampleRatio`. |
+| `traces.sampleRatio` | number | `1.0` | Sample fraction (0.0–1.0) when `traces.sampler: ratio`. |
+
+#### `resource.*` — shared OTel Resource attributes
+
+| Property | Type | Default | Description |
+|---|---|---|---|
+| `resource.serviceName` | string | `gravitee-api-gateway` | `service.name` attribute on every record and span. |
+| `resource.serviceNamespace` | string | `apim` | `service.namespace` attribute. |
+| `resource.gcp.projectId` | string | — | GCP project ID. **Required** when `logs.exporter: gcloud` or `traces.enabled: true`. |
+| `resource.gcp.autoDetect` | boolean | `true` | Probe GKE/GCE metadata server to populate `k8s.*` / `cloud.region` attributes. |
+
+### Examples
+
+#### Logs to Cloud Logging only (the common case)
+
+Writes directly to Cloud Logging via REST. No OTel Collector needed. Auth is Application Default Credentials — on GKE this is Workload Identity.
 
 ```yaml
 reporters:
   otellogs:
-    enabled: true                          # default
-    exporter: otlp                         # default
-    endpoint: "http://otel-collector.YOUR_NAMESPACE.svc.cluster.local:4317"
-    correlationHeader: "X-Request-ID"      # default
-    batchSize: 512                         # default
-    scheduledDelayMs: 5000                 # default
-    reportHealthChecks: true               # default
-    reportLogs: false                      # default
-    reportMessageMetrics: true             # default
+    enabled: true
+    correlationHeader: "X-Request-ID"
+    logs:
+      enabled: true
+      exporter: gcloud
+      logName: "gravitee-api-gateway"
+    resource:
+      gcp:
+        projectId: "your-gcp-project-id"
 ```
 
-The `endpoint` must point to an OTel Collector that accepts OTLP gRPC. Use `http://` for plain-text in-cluster traffic. See [OTel Collector configuration](#2-otel-collector-configuration) below for a ready-to-use collector config.
+#### Logs via OTel Collector (OTLP/HTTP)
 
-### GCloud mode (direct to Cloud Logging)
-
-Writes directly to Cloud Logging via the REST API. No OTel Collector is needed. Authentication uses Application Default Credentials by default — on GKE this means Workload Identity; no credentials file required.
+Routes records through an OpenTelemetry Collector. Use this for multi-destination fanout or to centralise credential management.
 
 ```yaml
 reporters:
   otellogs:
-    enabled: true                          # default
-    exporter: gcloud
-    correlationHeader: "X-Request-ID"      # default
-    batchSize: 512                         # default
-    scheduledDelayMs: 5000                 # default
-    reportHealthChecks: true               # default
-    reportLogs: false                      # default
-    reportMessageMetrics: true             # default
-    gcloud:
-      projectId: "your-gcp-project-id"
-      logName: "gravitee-api-gateway"      # default
-      # credentialsFile: "/path/to/sa-key.json"  # omit to use ADC (default on GKE)
+    enabled: true
+    logs:
+      enabled: true
+      exporter: otlp
+      endpoint: "http://otel-collector.YOUR_NAMESPACE.svc.cluster.local:4318"
+      authMode: none
 ```
 
-To use a service-account key file instead of ADC (e.g. on a non-GKE VM):
+See [OTel Collector configuration](#2-otel-collector-configuration) for a ready-to-use collector config.
+
+#### Traces to Cloud Trace
+
+Exports one server-kind span per request to Cloud Trace via its native OTLP/HTTP endpoint. Authenticates with ADC. Requires the **Telemetry API** to be enabled on the project (`gcloud services enable telemetry.googleapis.com --project=YOUR_PROJECT_ID`) and the ADC quota project to be set (`gcloud auth application-default set-quota-project YOUR_PROJECT_ID` when using user credentials locally).
 
 ```yaml
-    gcloud:
-      projectId: "your-gcp-project-id"
-      credentialsFile: "/etc/gravitee/gcp-sa-key.json"
+reporters:
+  otellogs:
+    enabled: true
+    traces:
+      enabled: true
+      endpoint: "https://telemetry.googleapis.com/v1/traces"
+      authMode: gcp-adc
+    resource:
+      gcp:
+        projectId: "your-gcp-project-id"
 ```
+
+#### Combined logs + traces (recommended)
+
+Logs land in Cloud Logging; spans land in Cloud Trace; both share the same trace ID so the Cloud Trace UI shows linked log entries automatically.
+
+```yaml
+reporters:
+  otellogs:
+    enabled: true
+    correlationHeader: "X-Request-ID"
+    logs:
+      enabled: true
+      exporter: gcloud
+      logName: "gravitee-api-gateway"
+    traces:
+      enabled: true
+      endpoint: "https://telemetry.googleapis.com/v1/traces"
+      authMode: gcp-adc
+    resource:
+      serviceName: "gravitee-api-gateway"
+      serviceNamespace: "apim"
+      gcp:
+        projectId: "your-gcp-project-id"
+```
+
+#### Dev/stage with full request logging
+
+Enables full request log events (which carry method, URI, headers, status, content lengths) plus request/response bodies. Use only in non-production environments handling no PII/PHI. Bodies still pass through the upstream API logging filter first.
+
+```yaml
+reporters:
+  otellogs:
+    logs:
+      enabled: true
+      exporter: gcloud
+      reportRequestLogs: true
+      reportPayloads: true       # do NOT enable in production
+    resource:
+      gcp:
+        projectId: "your-gcp-project-id"
+```
+
+### Backward compatibility
+
+The legacy flat keys (`reporters.otellogs.exporter`, `reporters.otellogs.endpoint`, `reporters.otellogs.reportLogs`, `reporters.otellogs.gcloud.projectId`, etc.) are still read for one release with a startup `WARN` log naming each legacy key in use and its replacement. The `gcloud.credentialsFile` option is removed entirely — ADC is the only supported GCP auth path (Workload Identity on GKE, `gcloud auth application-default login` locally, `GOOGLE_APPLICATION_CREDENTIALS` in CI).
 
 See [GCP Configuration](#gcp-configuration) for IAM setup, querying, and the full OTel Collector config for OTLP mode.
 
@@ -139,9 +219,9 @@ Releases follow **semver tagging**. To publish a new release:
 
 #### Background
 
-Google does not expose a native OTLP endpoint for logs as of mid-2026. `telemetry.googleapis.com` supports traces only (OTLP logs return `UNIMPLEMENTED`); `logging.googleapis.com` speaks the proprietary `LoggingServiceV2` gRPC API, not OTLP. The `otlp` mode therefore requires an OTel Collector as a translation layer. The `gcloud` mode eliminates that by calling the Cloud Logging REST API directly from the plugin.
+Google's native OTLP ingestion as of mid-2026 is **traces-only**. `telemetry.googleapis.com/v1/traces` accepts OTLP/HTTP spans directly — this plugin uses it for the traces signal with no collector required. For logs, `telemetry.googleapis.com` returns `UNIMPLEMENTED`; `logging.googleapis.com` speaks the proprietary `LoggingServiceV2` API, not OTLP. The plugin therefore supports two logs paths: `logs.exporter: gcloud` calls the Cloud Logging REST API directly (no collector), and `logs.exporter: otlp` sends OTLP/HTTP to a collector that translates to Cloud Logging.
 
-When Google adds native OTLP log ingestion to `telemetry.googleapis.com`, switching to collector-free OTLP will be a one-line config change (`endpoint: https://telemetry.googleapis.com`) — no code changes needed.
+When Google adds native OTLP log ingestion to `telemetry.googleapis.com`, switching to collector-free OTLP logs will be a one-line config change (`logs.endpoint: https://telemetry.googleapis.com` + `logs.authMode: gcp-adc`) — no code changes needed.
 
 #### 1. IAM — grant write access
 
@@ -177,27 +257,23 @@ For the `otlp` mode, apply the same steps to the OTel Collector's service accoun
 
 #### 2. OTel Collector configuration
 
-Use [`otelcol-contrib`](https://github.com/open-telemetry/opentelemetry-collector-contrib), which includes the `googlecloud` exporter:
+The plugin's OTLP exporter speaks OTLP/HTTP (not gRPC), so configure the collector's `otlp` receiver to listen on the HTTP port (`4318`). Use [`otelcol-contrib`](https://github.com/open-telemetry/opentelemetry-collector-contrib), which includes the `googlecloud` exporter:
 
 ```yaml
 receivers:
   otlp:
     protocols:
-      grpc:
-        endpoint: "0.0.0.0:4317"
+      http:
+        endpoint: "0.0.0.0:4318"
 
 processors:
   resource:
+    # Optional: the plugin already sets these via resource.* config.
+    # Keep upserts only if you want collector-side overrides.
     attributes:
       - action: upsert
         key: gcp.project_id
         value: "YOUR_PROJECT_ID"
-      - action: upsert
-        key: service.name
-        value: "gravitee-api-gateway"
-      - action: upsert
-        key: service.namespace
-        value: "gravitee"
 
 exporters:
   googlecloud:
@@ -212,14 +288,15 @@ service:
       exporters: [googlecloud]
 ```
 
-The `googlecloud` exporter picks up Application Default Credentials automatically on GKE via the pod's Workload Identity annotation — no credentials file needed.
+In `gravitee.yml`, point the plugin at this collector with `logs.endpoint: http://otel-collector.YOUR_NAMESPACE.svc.cluster.local:4318` (and `logs.exporter: otlp`). The `googlecloud` exporter picks up Application Default Credentials automatically on GKE via the pod's Workload Identity annotation — no credentials file needed.
 
 #### 3. Gravitee gateway configuration
 
-See the [Configuration](#configuration) section above for the full `gravitee.yml` examples. The minimal additions for GCP:
+See the [Configuration](#configuration) section above for full `gravitee.yml` examples. Minimal additions for GCP:
 
-- **GCloud mode**: set `exporter: gcloud` and `gcloud.projectId: YOUR_PROJECT_ID`. No endpoint needed.
-- **OTLP mode**: set `exporter: otlp` and `endpoint: http://otel-collector.YOUR_NAMESPACE.svc.cluster.local:4317`.
+- **Logs to Cloud Logging direct**: set `logs.exporter: gcloud` and `resource.gcp.projectId: YOUR_PROJECT_ID`. No endpoint needed.
+- **Logs via OTel Collector**: set `logs.exporter: otlp` and `logs.endpoint: http://otel-collector.YOUR_NAMESPACE.svc.cluster.local:4318`.
+- **Traces to Cloud Trace**: set `traces.enabled: true`. Default endpoint and auth (`gcp-adc`) hit `telemetry.googleapis.com/v1/traces` correctly when ADC is configured.
 
 #### 4. Querying logs in Cloud Logging
 
@@ -259,29 +336,59 @@ Once Grafana Alloy is configured to bridge Cloud Logging to Loki, query with Log
 {job="gravitee/gravitee-api-gateway"} | json | sentry_trace_id=`TRACE_ID_HERE`
 ```
 
-### Log Record Schema
+### Record and Span Schema
 
-Every emitted record carries these OTel SDK fields:
+#### Logs signal
+
+Every log record carries these OTel SDK fields:
 
 | Field | Source |
 |---|---|
-| `traceId` | `X-Request-ID` header, or W3C `traceparent` as fallback |
-| `spanId` | `traceparent` span component (omitted when absent) |
+| `traceId` | W3C `traceparent` (preferred); else SHA-256(`correlationHeader` value) truncated to 16 bytes |
+| `spanId` | `traceparent` span component when present |
 | `severity` | HTTP status: 5xx → ERROR, 4xx → WARN, else INFO |
 | `timestamp` | Event timestamp (nanosecond precision) |
-| `body` | `"{METHOD} {path} → {status}"` human-readable summary |
+| `body` | `"{METHOD} {path} → {status}"` |
+
+In Cloud Logging the `http.method`, `http.url`, `http.status`, and `http.latency_ms` attributes are promoted to the native `httpRequest` LogEntry field so the Logs Explorer renders method + URL + status + latency as chips on the summary line.
 
 Attributes by event type:
 
-**Metrics (HTTP request):** `api.name`, `api.type`, `http.method`, `http.status`, `http.latency_ms`, `upstream.endpoint`, `context.application`, `context.plan`, `context.subscription`, `gateway.proxy_latency_ms`, `gateway.api_latency_ms`, `error.message`
+**Metrics (HTTP request):** `api.name`, `api.type`, `http.method`, `http.url`, `http.status`, `http.latency_ms`, `upstream.endpoint`, `context.application`, `context.plan`, `context.subscription`, `gateway.proxy_latency_ms`, `gateway.api_latency_ms`, `error.message`. Path segments matching numeric IDs or UUIDs are replaced with `{id}` before logging.
 
 **EndpointStatus (health checks):** `api.name`, `endpoint.name`, `endpoint.url`, `endpoint.status`, `endpoint.response_time_ms`
 
 **MessageMetrics (async/event-driven APIs):** `api.name`, `message.count`, `message.error_count`, `message.content_length`
 
-**Log (request/response metadata):** `api.name`, `http.method`, `http.status`, `log.request.headers_count`, `log.response.headers_count`, `log.request.content_length`, `log.response.content_length` — disabled by default (`reportLogs: false`)
+**Log (request/response metadata, opt-in via `logs.reportRequestLogs: true`):** `api.name`, `http.method`, `http.status`, `log.request.headers_count`, `log.response.headers_count`. When `logs.reportPayloads: true` is **also** set (dev/stage only), request and response bodies are attached as `http.request.body` and `http.response.body`.
 
-No payload values are ever logged. No PII or PHI in any attribute.
+#### Traces signal
+
+When `traces.enabled: true`, one span per request is emitted:
+
+| Field | Value |
+|---|---|
+| `name` | `gravitee.gateway.request` |
+| `kind` | `SERVER` |
+| `startTime` | `event.timestamp - gatewayResponseTimeMs` |
+| `endTime` | `event.timestamp` |
+| `traceId` | Same resolution as the log record's `traceId` — so logs and spans for the same request match |
+| `parentSpanId` | From inbound W3C `traceparent` when present; otherwise the span is the trace root |
+| `status` | `ERROR` with description `"HTTP {status}"` for 5xx responses; `UNSET` otherwise |
+
+Attributes follow OTel HTTP semantic conventions (not the logs-side names — the two namespaces serve different rendering targets):
+
+| Attribute | Source |
+|---|---|
+| `http.request.method` | OTel HTTP semconv |
+| `http.response.status_code` | OTel HTTP semconv |
+| `http.route` | Request URI (path) |
+| `gravitee.api.name` | Gravitee-namespaced |
+| `gravitee.upstream.endpoint` | Gravitee-namespaced |
+
+#### Compliance posture
+
+No payload values are ever logged in the default configuration. No PII or PHI in any attribute unless `logs.reportPayloads: true` is explicitly enabled — which is intended for dev/stage/test only. Production deployments handling regulated data must keep that flag `false` and rely on the upstream API logging configuration to omit bodies entirely.
 
 ### Sentry Integration
 
@@ -332,7 +439,9 @@ Note: LogQL flattens nested JSON keys with underscores, so `sentry.trace_id` bec
 
 ### Architecture
 
-**OTLP mode** (`exporter: otlp`):
+Logs and traces are independent pipelines. Both share one OTel `Resource` (so service/k8s/cloud attributes are consistent) and one `TraceContextResolver` (so logs and spans for the same request carry identical trace IDs).
+
+**Logs — `logs.exporter: gcloud`** (the default):
 
 ```
 Gravitee Gateway (JVM)
@@ -340,27 +449,39 @@ Gravitee Gateway (JVM)
         └── mapper/* → OtelLogWriter
               └── SdkLoggerProvider
                     └── BatchLogRecordProcessor
-                          └── OtlpGrpcLogRecordExporter
-                                └── OTel Collector (in-cluster, otelcol-contrib)
-                                      └── googlecloud exporter
-                                            └── Google Cloud Logging
-                                                  └── Grafana Alloy → Grafana Cloud Loki
-```
-
-**GCloud mode** (`exporter: gcloud`):
-
-```
-Gravitee Gateway (JVM)
-  └── OtelLogsReporter
-        └── mapper/* → OtelLogWriter
-              └── SdkLoggerProvider
-                    └── BatchLogRecordProcessor
-                          └── GclLogRecordExporter (REST API v2, ADC/SA key)
+                          └── GclLogRecordExporter (Cloud Logging REST API v2, ADC bearer)
                                 └── Google Cloud Logging
                                       └── Grafana Alloy → Grafana Cloud Loki
 ```
 
-The OTel SDK owns batching and retry in both modes. `OtelLogWriter` is a thin wrapper around `SdkLoggerProvider` with no manual queue management.
+**Logs — `logs.exporter: otlp`**:
+
+```
+Gravitee Gateway (JVM)
+  └── OtelLogsReporter
+        └── mapper/* → OtelLogWriter
+              └── SdkLoggerProvider
+                    └── BatchLogRecordProcessor
+                          └── CustomOtlpHttpLogRecordExporter (java.net.http, optional ADC headers)
+                                └── OTel Collector (in-cluster, otelcol-contrib)
+                                      └── googlecloud exporter
+                                            └── Google Cloud Logging
+```
+
+**Traces — `traces.enabled: true`**:
+
+```
+Gravitee Gateway (JVM)
+  └── OtelLogsReporter
+        └── MetricsToSpanMapper → OtelTraceWriter
+              └── SdkTracerProvider
+                    └── BatchSpanProcessor
+                          └── CustomOtlpHttpSpanExporter (java.net.http, refreshing ADC bearer)
+                                └── telemetry.googleapis.com/v1/traces
+                                      └── Google Cloud Trace
+```
+
+The OTel SDK owns batching and retry in every pipeline. The custom HTTP exporters exist to avoid OkHttp/SPI classloader issues inside the Gravitee plugin runtime — the wire format is standard OTLP/HTTP protobuf either way. A failing exporter logs a `WARN` (including a truncated response body for diagnostics) and drops the batch; the other signal is unaffected.
 
 ## Contributing
 
