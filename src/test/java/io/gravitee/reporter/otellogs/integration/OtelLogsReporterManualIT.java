@@ -123,7 +123,7 @@ class OtelLogsReporterManualIT {
 
   @Test
   void traceIdFromXRequestIdIsSetOnRecord() {
-    // UUID 550e8400-e29b-41d4-a716-446655440000 normalises to 32-char hex
+    // X-Request-ID derives to a SHA-256-based 16-byte trace ID via TraceContextResolver
     var m = OtelTestSupport.metricsWithHeaders(
       200,
       Map.of("X-Request-ID", "550e8400-e29b-41d4-a716-446655440000")
@@ -136,7 +136,7 @@ class OtelLogsReporterManualIT {
     // No spanId was provided, so traceId lives as the http.request.trace_id attribute.
     assertThat(
       r.getAttributes().get(AttributeKey.stringKey("http.request.trace_id"))
-    ).isEqualTo("550e8400e29b41d4a716446655440000");
+    ).isEqualTo("a3a9e1ed9732cab28868127be00f1ce9");
   }
 
   // ── Scenario 4: traceparent header → trace context set on log record ────────
