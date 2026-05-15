@@ -167,6 +167,10 @@
                 </exclusion>
             </exclusions>
         </dependency>
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-sdk-trace</artifactId>
+        </dependency>
         <!--
             We use CustomOtlpHttpLogRecordExporter (built on java.net.http
             .HttpClient) to avoid the SPI issues the OkHttp-based OTel exporter
