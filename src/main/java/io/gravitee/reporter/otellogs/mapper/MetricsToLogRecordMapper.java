@@ -26,16 +26,21 @@ import io.opentelemetry.api.common.AttributesBuilder;
 public class MetricsToLogRecordMapper {
 
   private final OtelLogsReporterConfiguration config;
+  private final TraceContextResolver traceResolver;
 
   public MetricsToLogRecordMapper(OtelLogsReporterConfiguration config) {
     this.config = config;
+    this.traceResolver = new TraceContextResolver(
+      config.getCorrelationHeader()
+    );
   }
 
   public OtelLogRecord map(Metrics m) {
     HttpHeaders headers = extractRequestHeaders(m);
 
-    String traceId = resolveTraceId(headers);
-    String spanId = resolveSpanId(headers);
+    TraceContextResolver.Resolved tc = traceResolver.resolve(headers);
+    String traceId = tc.traceId();
+    String spanId = tc.spanId();
 
     String sentryTraceHeader = headers != null
       ? headers.get("sentry-trace")
@@ -84,33 +89,6 @@ public class MetricsToLogRecordMapper {
     var req = log.getEntrypointRequest();
     if (req == null) return null;
     return req.getHeaders();
-  }
-
-  private String resolveTraceId(HttpHeaders headers) {
-    if (headers == null) return null;
-    String corrValue = headers.get(config.getCorrelationHeader());
-    if (corrValue != null) {
-      String normalized = OtelLabels.normalizeTraceId(corrValue);
-      if (normalized != null) return normalized;
-    }
-    String traceparent = headers.get("traceparent");
-    if (traceparent != null) {
-      String[] parts = traceparent.split("-", 4);
-      if (parts.length >= 3) return parts[1];
-    }
-    return null;
-  }
-
-  // Returns null when only the correlation header is present (no span context in that header).
-  // Callers produce a traceId-only OtelLogRecord, which OtelLogWriter handles by omitting span context.
-  private String resolveSpanId(HttpHeaders headers) {
-    if (headers == null) return null;
-    String traceparent = headers.get("traceparent");
-    if (traceparent != null) {
-      String[] parts = traceparent.split("-", 4);
-      if (parts.length >= 3) return parts[2];
-    }
-    return null;
   }
 
   private Attributes buildAttributes(Metrics m) {

@@ -110,17 +110,19 @@ class MetricsToLogRecordMapperTest {
 
   @Test
   void xRequestIdHeaderBecomesTraceId() {
-    // Headers are embedded in the Log's entrypointRequest (v4 Metrics has no direct header field)
+    // Headers are embedded in the Log's entrypointRequest (v4 Metrics has no direct header field).
+    // Trace ID is SHA-256(correlationValue)[0..15] as lowercase hex per TraceContextResolver.
     var m = OtelTestSupport.metricsWithHeaders(
       200,
       Map.of("X-Request-ID", "550e8400-e29b-41d4-a716-446655440000")
     );
     var record = mapper.map(m);
-    assertThat(record.traceId()).isEqualTo("550e8400e29b41d4a716446655440000");
+    assertThat(record.traceId()).isEqualTo("a3a9e1ed9732cab28868127be00f1ce9");
   }
 
   @Test
-  void traceparentHeaderFallsBackWhenCorrelationHeaderAbsent() {
+  void traceparentHeaderTakesPrecedenceOverCorrelationHeader() {
+    // W3C traceparent is the canonical trace context — it wins when present.
     var m = OtelTestSupport.metricsWithHeaders(
       200,
       Map.of(
@@ -187,7 +189,8 @@ class MetricsToLogRecordMapperTest {
       Map.of("X-Request-ID", "550e8400-e29b-41d4-a716-446655440000")
     );
     var record = mapper.map(m);
-    assertThat(record.traceId()).isEqualTo("550e8400e29b41d4a716446655440000");
+    // SHA-256("550e8400-e29b-41d4-a716-446655440000")[0..15] as lowercase hex
+    assertThat(record.traceId()).isEqualTo("a3a9e1ed9732cab28868127be00f1ce9");
     assertThat(record.spanId()).isNull();
   }
 
