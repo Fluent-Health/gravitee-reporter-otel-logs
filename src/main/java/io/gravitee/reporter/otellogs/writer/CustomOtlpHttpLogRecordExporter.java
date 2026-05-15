@@ -27,12 +27,16 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.Collection;
+import java.util.Map;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
  * A custom OTLP HTTP log exporter that uses the built-in Java HttpClient to avoid
  * the SPI issues common in Gravitee plugins when using the official OTel exporters.
+ * Headers are sourced from a {@link Supplier} per export so ADC tokens can be
+ * refreshed without rebuilding the exporter.
  */
 public class CustomOtlpHttpLogRecordExporter implements LogRecordExporter {
 
@@ -42,14 +46,24 @@ public class CustomOtlpHttpLogRecordExporter implements LogRecordExporter {
 
   private final HttpClient httpClient;
   private final URI endpoint;
+  private final Supplier<Map<String, String>> headers;
 
+  /** Convenience constructor — no extra headers (backwards-compatible). */
   public CustomOtlpHttpLogRecordExporter(String endpoint) {
+    this(endpoint, OtlpAuthHeaders.none());
+  }
+
+  public CustomOtlpHttpLogRecordExporter(
+    String endpoint,
+    Supplier<Map<String, String>> headers
+  ) {
     this.httpClient = HttpClient.newBuilder()
       .connectTimeout(Duration.ofSeconds(5))
       .build();
     this.endpoint = URI.create(
       endpoint.endsWith("/") ? endpoint : endpoint + "/"
     );
+    this.headers = headers;
   }
 
   @Override
@@ -69,12 +83,14 @@ public class CustomOtlpHttpLogRecordExporter implements LogRecordExporter {
         logs.size()
       );
 
-      HttpRequest request = HttpRequest.newBuilder()
+      HttpRequest.Builder rb = HttpRequest.newBuilder()
         .uri(endpoint.resolve("v1/logs"))
         .timeout(Duration.ofSeconds(10))
         .header("Content-Type", "application/x-protobuf")
-        .POST(HttpRequest.BodyPublishers.ofByteArray(baos.toByteArray()))
-        .build();
+        .POST(HttpRequest.BodyPublishers.ofByteArray(baos.toByteArray()));
+      headers.get().forEach(rb::header);
+
+      HttpRequest request = rb.build();
 
       CompletableResultCode result = new CompletableResultCode();
 

@@ -140,22 +140,32 @@ public class OtelLogsReporter
       return new GclLogRecordExporter(projectId, cfg.getLogs().getLogName());
     }
     // Default: Custom OTLP HTTP — uses built-in HttpClient to avoid SPI issues in Gravitee
-    return new CustomOtlpHttpLogRecordExporter(cfg.getLogs().getEndpoint());
+    return new CustomOtlpHttpLogRecordExporter(
+      cfg.getLogs().getEndpoint(),
+      buildAuthHeaders(cfg.getLogs().getAuthMode(), cfg.getLogs().getHeaders())
+    );
   }
 
   private SpanExporter buildSpanExporter() {
     var traces = cfg.getTraces();
-    Supplier<Map<String, String>> headers = switch (traces.getAuthMode()) {
+    return new CustomOtlpHttpSpanExporter(
+      traces.getEndpoint(),
+      buildAuthHeaders(traces.getAuthMode(), traces.getHeaders())
+    );
+  }
+
+  private Supplier<Map<String, String>> buildAuthHeaders(
+    String authMode,
+    Map<String, String> staticHeaders
+  ) {
+    return switch (authMode) {
       case "gcp-adc" -> OtlpAuthHeaders.gcpAdc();
-      case "static" -> OtlpAuthHeaders.staticHeaders(traces.getHeaders());
+      case "static" -> OtlpAuthHeaders.staticHeaders(staticHeaders);
       case "none" -> OtlpAuthHeaders.none();
       default -> throw new IllegalStateException(
-        "Unknown traces.authMode '" +
-          traces.getAuthMode() +
-          "' — expected none|gcp-adc|static"
+        "Unknown authMode '" + authMode + "' — expected none|gcp-adc|static"
       );
     };
-    return new CustomOtlpHttpSpanExporter(traces.getEndpoint(), headers);
   }
 
   @Override
