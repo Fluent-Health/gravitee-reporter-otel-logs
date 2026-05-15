@@ -98,7 +98,7 @@ For one release, the existing flat property names are read as fallbacks into the
 | `reporters.otellogs.gcloud.projectId` | `reporters.otellogs.resource.gcp.projectId` |
 | `reporters.otellogs.gcloud.logName` | `reporters.otellogs.logs.logName` |
 
-`reporters.otellogs.gcloud.credentialsFile` is removed with no replacement; if set, the bridge logs a single `WARN` at startup that the property is unsupported and ADC will be used instead.
+`reporters.otellogs.gcloud.credentialsFile` is removed with no replacement and no compatibility handling — if set, it is silently ignored.
 
 Each legacy key in use logs a single `WARN` at startup naming the new key. Trace configuration has no legacy alias — it is only addressable under `traces:`.
 
@@ -250,7 +250,7 @@ src/main/java/io/gravitee/reporter/otellogs/
 - **Unit — `TraceContextResolver`**: traceparent precedence over correlation header; deterministic trace ID from header; fresh ID when neither present; same input ⇒ same trace ID across log and span mappers.
 - **Unit — `OtlpAuthHeaders`**: ADC token refresh between calls, header shape, refresh failure surfaces as `UncheckedIOException`.
 - **Unit — `GcpOtelResource`**: required attributes under GKE, GCE, and unknown environments; `gcp.project_id` always set when projectId resolved.
-- **Unit — `LegacyConfigBridge`**: each legacy key maps to the right new key; explicit new-key value wins over legacy; deprecation warning logged exactly once per legacy key in use; `gcloud.credentialsFile` is ignored with a single "unsupported, ADC will be used" warning.
+- **Unit — `LegacyConfigBridge`**: each legacy key maps to the right new key; explicit new-key value wins over legacy; deprecation warning logged exactly once per legacy key in use.
 - **Integration — extend `OtelLogsReporterIT`**: mock OTLP receiver captures spans; assert one span per request, parent linkage from inbound `traceparent`, span's `trace_id` equals the linked log entry's `trace_id`, span attributes include HTTP method/status/route.
 
 ---
