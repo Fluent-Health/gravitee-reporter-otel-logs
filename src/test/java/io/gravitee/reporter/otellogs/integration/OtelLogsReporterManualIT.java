@@ -70,7 +70,7 @@ class OtelLogsReporterManualIT {
     reporter = new OtelLogsReporter(cfg);
     inject(reporter, "writer", writer);
     inject(reporter, "metricsMapper", new MetricsToLogRecordMapper(cfg));
-    inject(reporter, "logMapper", new LogToLogRecordMapper(false));
+    inject(reporter, "logMapper", new LogToLogRecordMapper(false, false));
     inject(reporter, "endpointMapper", new EndpointStatusToLogRecordMapper());
     inject(reporter, "messageMapper", new MessageMetricsToLogRecordMapper());
     // Public start() flips the lifecycle to STARTED, which report() checks.

@@ -49,6 +49,7 @@ public final class OtelTestSupport {
     logs.setReportHealthChecks(true);
     logs.setReportRequestLogs(false);
     logs.setReportMessageMetrics(true);
+    logs.setReportRequestSummary(true);
 
     var traces = new TracesConfiguration();
     var resource = new ResourceConfiguration();
@@ -96,6 +97,43 @@ public final class OtelTestSupport {
       .apiId("api-123")
       .apiName("Test API")
       .entrypointRequest(entrypointRequest)
+      .build();
+    m.setLog(log);
+    return m;
+  }
+
+  /**
+   * Metrics with a fully-populated embedded Log — request + response with
+   * headers and bodies on each side. Pass {@code null} for any of the bodies
+   * to leave that side empty.
+   */
+  public static Metrics metricsWithFullPayloads(
+    int status,
+    Map<String, String> reqHeaders,
+    String reqBody,
+    Map<String, String> respHeaders,
+    String respBody
+  ) {
+    Metrics m = metrics(status);
+    HttpHeaders reqH = HttpHeaders.create();
+    reqHeaders.forEach(reqH::set);
+    Request req = new Request();
+    req.setMethod(HttpMethod.GET);
+    req.setUri("/api/v1/users/42");
+    req.setHeaders(reqH);
+    if (reqBody != null) req.setBody(reqBody);
+
+    HttpHeaders respH = HttpHeaders.create();
+    respHeaders.forEach(respH::set);
+    Response resp = new Response(status);
+    resp.setHeaders(respH);
+    if (respBody != null) resp.setBody(respBody);
+
+    Log log = Log.builder()
+      .apiId("api-123")
+      .apiName("Test API")
+      .entrypointRequest(req)
+      .entrypointResponse(resp)
       .build();
     m.setLog(log);
     return m;

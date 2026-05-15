@@ -15,11 +15,15 @@
  */
 package io.gravitee.reporter.otellogs.mapper;
 
+import com.google.gson.Gson;
+import io.gravitee.gateway.api.http.HttpHeaders;
 import io.opentelemetry.api.logs.Severity;
 import java.util.Optional;
 import java.util.regex.Pattern;
 
 public final class OtelLabels {
+
+  private static final Gson GSON = new Gson();
 
   /** Typed result of parsing a {@code sentry-trace} header. */
   public record SentryTrace(String traceId, String spanId) {}
@@ -73,6 +77,16 @@ public final class OtelLabels {
     if (status >= 500) return Severity.ERROR;
     if (status >= 400) return Severity.WARN;
     return Severity.INFO;
+  }
+
+  /**
+   * Serialises an {@link HttpHeaders} bundle to a JSON string of name → list-of-values.
+   * Returns null when the bundle is null or empty so callers can skip setting an
+   * empty-string attribute on the log record.
+   */
+  public static String headersAsJson(HttpHeaders headers) {
+    if (headers == null || headers.isEmpty()) return null;
+    return GSON.toJson(headers.toListValuesMap());
   }
 
   /**

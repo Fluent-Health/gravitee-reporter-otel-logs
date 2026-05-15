@@ -30,7 +30,7 @@ class LogToLogRecordMapperTest {
 
   @BeforeEach
   void setUp() {
-    mapper = new LogToLogRecordMapper(false);
+    mapper = new LogToLogRecordMapper(false, false);
   }
 
   @Test
@@ -147,7 +147,7 @@ class LogToLogRecordMapperTest {
 
   @Test
   void payloadsAreEmittedWhenFlagEnabled() {
-    var enabledMapper = new LogToLogRecordMapper(true);
+    var enabledMapper = new LogToLogRecordMapper(true, false);
     var log = OtelTestSupport.log(200);
     log.getEntrypointRequest().setBody("{\"hello\":\"world\"}");
     log.getEntrypointResponse().setBody("{\"ok\":true}");
@@ -164,7 +164,7 @@ class LogToLogRecordMapperTest {
 
   @Test
   void emptyOrNullPayloadsAreSkippedEvenWhenFlagEnabled() {
-    var enabledMapper = new LogToLogRecordMapper(true);
+    var enabledMapper = new LogToLogRecordMapper(true, false);
     var log = OtelTestSupport.log(200);
     // request body left null; response body explicitly empty
     log.getEntrypointResponse().setBody("");
@@ -177,5 +177,56 @@ class LogToLogRecordMapperTest {
     assertThat(
       record.attributes().get(AttributeKey.stringKey("http.response.body"))
     ).isNull();
+  }
+
+  @Test
+  void httpUrlIsEmittedSoCloudLoggingRendersChips() {
+    // http.url is what GclLogRecordExporter promotes to httpRequest.requestUrl,
+    // which is the field Cloud Logging needs to render the full chip line.
+    var record = mapper.map(OtelTestSupport.log(200));
+    assertThat(
+      record.attributes().get(AttributeKey.stringKey("http.url"))
+    ).isEqualTo("/api/v1/data");
+  }
+
+  @Test
+  void headersAreOmittedWhenFlagDisabled() {
+    // log() fixture sets two request headers (Content-Type, X-Request-ID)
+    // and one response header (Content-Type).
+    var record = mapper.map(OtelTestSupport.log(200));
+    assertThat(
+      record.attributes().get(AttributeKey.stringKey("http.request.headers"))
+    )
+      .as("request headers must be absent when reportHeaders=false")
+      .isNull();
+    assertThat(
+      record.attributes().get(AttributeKey.stringKey("http.response.headers"))
+    )
+      .as("response headers must be absent when reportHeaders=false")
+      .isNull();
+  }
+
+  @Test
+  void headersAreEmittedAsJsonWhenFlagEnabled() {
+    var enabledMapper = new LogToLogRecordMapper(false, true);
+    var record = enabledMapper.map(OtelTestSupport.log(200));
+
+    String reqJson = record
+      .attributes()
+      .get(AttributeKey.stringKey("http.request.headers"));
+    String respJson = record
+      .attributes()
+      .get(AttributeKey.stringKey("http.response.headers"));
+
+    assertThat(reqJson)
+      .as("request headers should be JSON-encoded")
+      .contains("\"Content-Type\"")
+      .contains("\"application/json\"")
+      .contains("\"X-Request-ID\"")
+      .contains("\"test-req-id\"");
+    assertThat(respJson)
+      .as("response headers should be JSON-encoded")
+      .contains("\"Content-Type\"")
+      .contains("\"application/json\"");
   }
 }

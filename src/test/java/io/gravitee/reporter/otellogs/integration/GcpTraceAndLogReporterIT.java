@@ -21,9 +21,11 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.google.auth.oauth2.GoogleCredentials;
+import com.google.gson.Gson;
 import io.gravitee.common.http.HttpMethod;
 import io.gravitee.gateway.api.http.HttpHeaders;
 import io.gravitee.reporter.api.common.Request;
+import io.gravitee.reporter.api.common.Response;
 import io.gravitee.reporter.api.v4.log.Log;
 import io.gravitee.reporter.api.v4.metric.Metrics;
 import io.gravitee.reporter.otellogs.OtelLogsReporter;
@@ -38,6 +40,7 @@ import java.net.http.HttpResponse;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -126,7 +129,12 @@ class GcpTraceAndLogReporterIT {
 
     reporter.start();
     try {
+      // Drive both event types for the same logical request. With
+      // reportRequestSummary=true + reportRequestLogs=false, only the
+      // Metrics-derived summary record should be emitted; the Log event
+      // is filtered out by the reporter routing.
       reporter.report(metricsWithTraceparent(traceparent));
+      reporter.report(logWithTraceparent(traceparent));
     } finally {
       reporter.stop(); // stop() flushes both pipelines
     }
@@ -145,22 +153,25 @@ class GcpTraceAndLogReporterIT {
       );
     HttpClient http = HttpClient.newHttpClient();
 
+    // GCL's entries:list occasionally returns transient 5xx during ingest
+    // propagation; ignoreExceptions lets awaitility retry through those.
     await("log entry with traceId=" + traceId + " to appear in GCL")
-      .atMost(Duration.ofSeconds(90))
+      .atMost(Duration.ofSeconds(120))
       .pollInterval(Duration.ofSeconds(5))
+      .ignoreException(IllegalStateException.class)
       .conditionEvaluationListener(condition ->
         System.out.printf(
-          "Polling Cloud Logging (elapsed %.0fs / 90s)%n",
+          "Polling Cloud Logging (elapsed %.0fs / 120s)%n",
           condition.getElapsedTimeInMS() / 1000.0
         )
       )
       .until(() ->
-        queryLogEntries(http, creds, projectId, filter).contains(
+        queryLogEntries(http, creds, projectId, filter, 10).contains(
           expectedTraceField
         )
       );
 
-    String responseBody = queryLogEntries(http, creds, projectId, filter);
+    String responseBody = queryLogEntries(http, creds, projectId, filter, 10);
     assertThat(responseBody)
       .as("GCL readback must include our trace field %s", expectedTraceField)
       .contains(expectedTraceField);
@@ -168,10 +179,71 @@ class GcpTraceAndLogReporterIT {
       .as("GCL readback must include the log body we wrote")
       .contains("GET /gravitee-it-probe");
 
+    // Combined-record assertion: exactly ONE entry per request, and that
+    // entry must carry both the request side (method) AND the response side
+    // (status) — proving the Metrics-derived summary record fuses the two.
+    @SuppressWarnings("unchecked")
+    Map<String, Object> parsed = new Gson().fromJson(responseBody, Map.class);
+    @SuppressWarnings("unchecked")
+    List<Map<String, Object>> entries = (List<Map<String, Object>>) parsed.get(
+      "entries"
+    );
+    assertThat(entries)
+      .as(
+        "exactly one log record expected per request when reportRequestSummary=true + reportRequestLogs=false; both Metrics and Log events were reported but the Log path must be suppressed"
+      )
+      .hasSize(1);
+
+    @SuppressWarnings("unchecked")
+    Map<String, Object> httpRequest = (Map<String, Object>) entries
+      .get(0)
+      .get("httpRequest");
+    assertThat(httpRequest)
+      .as("summary record must carry httpRequest with combined req+resp fields")
+      .isNotNull();
+    assertThat(httpRequest.get("requestMethod"))
+      .as("request side must be present (method from inbound request)")
+      .isEqualTo("GET");
+    assertThat(httpRequest.get("requestUrl"))
+      .as("request side must include the sanitized URL")
+      .isEqualTo("/gravitee-it-probe");
+    // GCL returns numeric status as a double via JSON; coerce for comparison.
+    assertThat(((Number) httpRequest.get("status")).intValue())
+      .as("response side must be present (status from outbound response)")
+      .isEqualTo(200);
+
+    // Headers and bodies should also be present on the same record (the
+    // reportHeaders + reportPayloads flags are now wired into the Metrics
+    // summary path, not just the Log-derived detail path). These land in
+    // jsonPayload via the exporter's default attribute routing.
+    @SuppressWarnings("unchecked")
+    Map<String, Object> jsonPayload = (Map<String, Object>) entries
+      .get(0)
+      .get("jsonPayload");
+    assertThat(jsonPayload)
+      .as("jsonPayload should be present on the record")
+      .isNotNull();
+    assertThat((String) jsonPayload.get("http.request.body"))
+      .as("request body must appear when reportPayloads=true")
+      .isEqualTo("{\"q\":\"hello\"}");
+    assertThat((String) jsonPayload.get("http.response.body"))
+      .as("response body must appear when reportPayloads=true")
+      .isEqualTo("{\"ok\":true}");
+    assertThat((String) jsonPayload.get("http.request.headers"))
+      .as("request headers must appear as JSON when reportHeaders=true")
+      .contains("\"Content-Type\"")
+      .contains("\"X-Tenant\"")
+      .contains("\"acme\"");
+    assertThat((String) jsonPayload.get("http.response.headers"))
+      .as("response headers must appear as JSON when reportHeaders=true")
+      .contains("\"Content-Type\"")
+      .contains("\"application/json\"");
+
     System.out.println(
       """
 
-      Log confirmed in Cloud Logging. The span was exported to
+      One combined log record confirmed in Cloud Logging (request method +
+      URL + response status all on httpRequest). The span was exported to
       telemetry.googleapis.com/v1/traces — open the Cloud Trace URL above to
       verify it in the UI (typical ingestion lag: 30s–2min).
       """
@@ -187,7 +259,10 @@ class GcpTraceAndLogReporterIT {
     logs.setLogName(LOG_NAME);
     logs.setBatchSize(1);
     logs.setScheduledDelayMs(100);
-    logs.setReportRequestLogs(false);
+    logs.setReportRequestLogs(false); // Log event path suppressed
+    logs.setReportRequestSummary(true); // Metrics-derived summary emitted
+    logs.setReportHeaders(true); // include req/resp headers on the summary
+    logs.setReportPayloads(true); // include req/resp bodies on the summary
     logs.setReportHealthChecks(false);
     logs.setReportMessageMetrics(false);
 
@@ -220,10 +295,32 @@ class GcpTraceAndLogReporterIT {
     Metrics m = mock(Metrics.class);
     Log lg = mock(Log.class);
     Request req = mock(Request.class);
-    HttpHeaders h = mock(HttpHeaders.class);
-    when(h.get("traceparent")).thenReturn(traceparent);
-    when(req.getHeaders()).thenReturn(h);
+    Response resp = mock(Response.class);
+
+    HttpHeaders reqH = mock(HttpHeaders.class);
+    when(reqH.get("traceparent")).thenReturn(traceparent);
+    when(reqH.isEmpty()).thenReturn(false);
+    when(reqH.toListValuesMap()).thenReturn(
+      java.util.Map.of(
+        "Content-Type",
+        java.util.List.of("application/json"),
+        "X-Tenant",
+        java.util.List.of("acme")
+      )
+    );
+    when(req.getHeaders()).thenReturn(reqH);
+    when(req.getBody()).thenReturn("{\"q\":\"hello\"}");
+
+    HttpHeaders respH = mock(HttpHeaders.class);
+    when(respH.isEmpty()).thenReturn(false);
+    when(respH.toListValuesMap()).thenReturn(
+      java.util.Map.of("Content-Type", java.util.List.of("application/json"))
+    );
+    when(resp.getHeaders()).thenReturn(respH);
+    when(resp.getBody()).thenReturn("{\"ok\":true}");
+
     when(lg.getEntrypointRequest()).thenReturn(req);
+    when(lg.getEntrypointResponse()).thenReturn(resp);
     when(m.getLog()).thenReturn(lg);
     when(m.getHttpMethod()).thenReturn(HttpMethod.GET);
     when(m.getStatus()).thenReturn(200);
@@ -235,20 +332,44 @@ class GcpTraceAndLogReporterIT {
     return m;
   }
 
+  /**
+   * Builds a Log event that should be SUPPRESSED by the reporter when
+   * reportRequestLogs=false. Reported alongside the Metrics event to prove
+   * the suppression actually happens — if it didn't, the readback would
+   * find two entries instead of one.
+   */
+  private static Log logWithTraceparent(String traceparent) {
+    Log lg = mock(Log.class);
+    Request req = mock(Request.class);
+    Response resp = mock(Response.class);
+    HttpHeaders h = mock(HttpHeaders.class);
+    when(h.get("traceparent")).thenReturn(traceparent);
+    when(req.getHeaders()).thenReturn(h);
+    when(req.getMethod()).thenReturn(HttpMethod.GET);
+    when(req.getUri()).thenReturn("/gravitee-it-probe");
+    when(resp.getStatus()).thenReturn(200);
+    when(lg.getEntrypointRequest()).thenReturn(req);
+    when(lg.getEntrypointResponse()).thenReturn(resp);
+    when(lg.getApiName()).thenReturn("Gravitee OTel IT");
+    when(lg.getTimestamp()).thenReturn(System.currentTimeMillis());
+    return lg;
+  }
+
   // ── Helpers ──────────────────────────────────────────────────────────────
 
   private static String queryLogEntries(
     HttpClient http,
     GoogleCredentials credentials,
     String projectId,
-    String filter
+    String filter,
+    int pageSize
   ) throws Exception {
     credentials.refreshIfExpired();
     String token = credentials.getAccessToken().getTokenValue();
     String escapedFilter = filter.replace("\"", "\\\"");
     String body = """
-      {"resourceNames":["projects/%s"],"filter":"%s","pageSize":1,"orderBy":"timestamp desc"}
-      """.formatted(projectId, escapedFilter)
+      {"resourceNames":["projects/%s"],"filter":"%s","pageSize":%d,"orderBy":"timestamp desc"}
+      """.formatted(projectId, escapedFilter, pageSize)
       .strip();
 
     var request = HttpRequest.newBuilder()

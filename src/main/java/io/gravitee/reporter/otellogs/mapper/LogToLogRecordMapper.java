@@ -26,16 +26,28 @@ import io.opentelemetry.api.logs.Severity;
 /**
  * Maps a Gravitee v4 {@link Log} (entrypoint request/response metadata) to an {@link OtelLogRecord}.
  *
- * <p>Note: The v4 Log class stores metadata on sub-objects (entrypointRequest / entrypointResponse).
+ * <p>The Log v4 class stores metadata on sub-objects (entrypointRequest / entrypointResponse).
  * Raw HTTP method, URI, and response status come from those sub-objects.
- * Content lengths are not exposed by the v4 Log API and are therefore omitted.
+ *
+ * <p>Two compliance-sensitive flags control what extra data is forwarded:
+ * <ul>
+ *   <li>{@code includeHeaders} — attach JSON-encoded request/response header maps as
+ *       {@code http.request.headers} / {@code http.response.headers}.
+ *   <li>{@code includePayloads} — attach raw bodies as {@code http.request.body} /
+ *       {@code http.response.body}.
+ * </ul>
+ * Both default to false and must be combined with {@code logs.reportRequestLogs: true}
+ * to take effect. They rely on the upstream API logging filter to omit anything
+ * sensitive — this mapper does not scrub.
  */
 public class LogToLogRecordMapper {
 
   private final boolean includePayloads;
+  private final boolean includeHeaders;
 
-  public LogToLogRecordMapper(boolean includePayloads) {
+  public LogToLogRecordMapper(boolean includePayloads, boolean includeHeaders) {
     this.includePayloads = includePayloads;
+    this.includeHeaders = includeHeaders;
   }
 
   public OtelLogRecord map(Log log) {
@@ -62,6 +74,12 @@ public class LogToLogRecordMapper {
       AttributeKey.stringKey("http.method"),
       req.getMethod().name()
     );
+    if (rawPath != null) {
+      // Promoted to httpRequest.requestUrl by GclLogRecordExporter so Cloud
+      // Logging renders the full method+url+status chip line on Log-derived
+      // records just like it does for Metrics-derived records.
+      b.put(AttributeKey.stringKey("http.url"), rawPath);
+    }
     if (status > 0) b.put(AttributeKey.longKey("http.status"), (long) status);
     if (req != null && req.getHeaders() != null) {
       b.put(
@@ -74,6 +92,20 @@ public class LogToLogRecordMapper {
         AttributeKey.longKey("log.response.headers_count"),
         (long) resp.getHeaders().size()
       );
+    }
+    if (includeHeaders) {
+      String reqHeadersJson = OtelLabels.headersAsJson(
+        req != null ? req.getHeaders() : null
+      );
+      if (reqHeadersJson != null) {
+        b.put(AttributeKey.stringKey("http.request.headers"), reqHeadersJson);
+      }
+      String respHeadersJson = OtelLabels.headersAsJson(
+        resp != null ? resp.getHeaders() : null
+      );
+      if (respHeadersJson != null) {
+        b.put(AttributeKey.stringKey("http.response.headers"), respHeadersJson);
+      }
     }
     if (includePayloads) {
       if (req != null && req.getBody() != null && !req.getBody().isEmpty()) {

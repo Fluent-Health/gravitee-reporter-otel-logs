@@ -84,6 +84,20 @@ public class LogsConfiguration {
   @Value("${reporters.otellogs.logs.reportPayloads:false}")
   private boolean reportPayloads;
 
+  // Forward request/response header content inside Log events as JSON-encoded
+  // map attributes. Same compliance posture as reportPayloads: default-deny,
+  // intended for dev/stage only — headers commonly contain auth tokens and
+  // other sensitive material.
+  @Value("${reporters.otellogs.logs.reportHeaders:false}")
+  private boolean reportHeaders;
+
+  // Emit a Metrics-event-derived "summary" log record per request. Default
+  // true preserves existing behaviour. Set false (combined with
+  // reportRequestLogs=true) to suppress the summary record and rely solely on
+  // the detailed Log-derived record — one log per request instead of two.
+  @Value("${reporters.otellogs.logs.reportRequestSummary:true}")
+  private boolean reportRequestSummary;
+
   public boolean isEnabled() {
     return enabled;
   }
@@ -179,5 +193,21 @@ public class LogsConfiguration {
 
   public void setReportPayloads(boolean v) {
     this.reportPayloads = v;
+  }
+
+  public boolean isReportHeaders() {
+    return reportHeaders;
+  }
+
+  public void setReportHeaders(boolean v) {
+    this.reportHeaders = v;
+  }
+
+  public boolean isReportRequestSummary() {
+    return reportRequestSummary;
+  }
+
+  public void setReportRequestSummary(boolean v) {
+    this.reportRequestSummary = v;
   }
 }
