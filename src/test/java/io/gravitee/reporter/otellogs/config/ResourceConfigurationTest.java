@@ -21,8 +21,14 @@ import org.junit.jupiter.api.Test;
 
 class ResourceConfigurationTest {
 
+  /**
+   * Setter-getter round-trip across every field. Cheap smoke test for accidental
+   * field-mixup or rename mistakes (e.g. a setter writing to the wrong field).
+   * The actual {@code @Value} defaults are exercised by integration tests, not
+   * here — Spring's defaults only inject inside a Spring context.
+   */
   @Test
-  void defaults_match_spec() {
+  void field_round_trip() {
     ResourceConfiguration cfg = new ResourceConfiguration();
     cfg.setServiceName("gravitee-api-gateway");
     cfg.setServiceNamespace("apim");
