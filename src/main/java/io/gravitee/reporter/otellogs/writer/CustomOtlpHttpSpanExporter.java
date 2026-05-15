@@ -91,7 +91,7 @@ public class CustomOtlpHttpSpanExporter implements SpanExporter {
       CompletableResultCode result = new CompletableResultCode();
 
       httpClient
-        .sendAsync(rb.build(), HttpResponse.BodyHandlers.discarding())
+        .sendAsync(rb.build(), HttpResponse.BodyHandlers.ofString())
         .whenComplete((response, throwable) -> {
           if (throwable != null) {
             log.warn("OTLP span export failed: {}", throwable.getMessage());
@@ -101,7 +101,11 @@ public class CustomOtlpHttpSpanExporter implements SpanExporter {
           ) {
             result.succeed();
           } else {
-            log.warn("OTLP span export status={}", response.statusCode());
+            log.warn(
+              "OTLP span export status={} body={}",
+              response.statusCode(),
+              truncate(response.body(), 500)
+            );
             result.fail();
           }
         });
@@ -124,5 +128,10 @@ public class CustomOtlpHttpSpanExporter implements SpanExporter {
   @Override
   public CompletableResultCode shutdown() {
     return CompletableResultCode.ofSuccess();
+  }
+
+  private static String truncate(String s, int max) {
+    if (s == null) return "";
+    return s.length() <= max ? s : s.substring(0, max) + "…";
   }
 }

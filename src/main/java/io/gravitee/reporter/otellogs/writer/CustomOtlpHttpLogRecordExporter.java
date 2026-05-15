@@ -95,7 +95,7 @@ public class CustomOtlpHttpLogRecordExporter implements LogRecordExporter {
       CompletableResultCode result = new CompletableResultCode();
 
       httpClient
-        .sendAsync(request, HttpResponse.BodyHandlers.discarding())
+        .sendAsync(request, HttpResponse.BodyHandlers.ofString())
         .whenComplete((response, throwable) -> {
           if (throwable != null) {
             log.error("Failed to send OTLP logs request", throwable);
@@ -106,8 +106,9 @@ public class CustomOtlpHttpLogRecordExporter implements LogRecordExporter {
             result.succeed();
           } else {
             log.warn(
-              "OTLP export failed with status={}",
-              response.statusCode()
+              "OTLP export failed with status={} body={}",
+              response.statusCode(),
+              truncate(response.body(), 500)
             );
             result.fail();
           }
@@ -131,5 +132,10 @@ public class CustomOtlpHttpLogRecordExporter implements LogRecordExporter {
   @Override
   public CompletableResultCode shutdown() {
     return CompletableResultCode.ofSuccess();
+  }
+
+  private static String truncate(String s, int max) {
+    if (s == null) return "";
+    return s.length() <= max ? s : s.substring(0, max) + "…";
   }
 }
