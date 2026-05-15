@@ -15,18 +15,46 @@
  */
 package io.gravitee.reporter.otellogs.spring;
 
+import io.gravitee.reporter.otellogs.config.LegacyConfigWarning;
+import io.gravitee.reporter.otellogs.config.LogsConfiguration;
 import io.gravitee.reporter.otellogs.config.OtelLogsReporterConfiguration;
+import io.gravitee.reporter.otellogs.config.ResourceConfiguration;
+import io.gravitee.reporter.otellogs.config.TracesConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
 
-/**
- * Spring configuration for the OTel logs reporter plugin.
- */
 @Configuration
 public class OtelLogsReporterSpringConfiguration {
 
   @Bean
-  public OtelLogsReporterConfiguration otelLogsReporterConfiguration() {
-    return new OtelLogsReporterConfiguration();
+  public LogsConfiguration logsConfiguration() {
+    return new LogsConfiguration();
+  }
+
+  @Bean
+  public TracesConfiguration tracesConfiguration() {
+    return new TracesConfiguration();
+  }
+
+  @Bean
+  public ResourceConfiguration resourceConfiguration() {
+    return new ResourceConfiguration();
+  }
+
+  @Bean
+  public OtelLogsReporterConfiguration otelLogsReporterConfiguration(
+    LogsConfiguration logs,
+    TracesConfiguration traces,
+    ResourceConfiguration resource
+  ) {
+    return new OtelLogsReporterConfiguration(logs, traces, resource);
+  }
+
+  @Bean
+  public LegacyConfigWarning legacyConfigWarning(Environment env) {
+    LegacyConfigWarning warn = new LegacyConfigWarning(env);
+    warn.run();
+    return warn;
   }
 }
