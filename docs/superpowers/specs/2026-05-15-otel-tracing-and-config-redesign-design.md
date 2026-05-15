@@ -52,7 +52,6 @@ reporters:
       enabled: true
       exporter: gcloud                   # gcloud | otlp | none
       logName: gravitee-api-gateway      # gcloud-only
-      credentialsFile:                   # gcloud-only; null → ADC
       endpoint: http://localhost:4317    # otlp-only
       authMode: none                     # none | gcp-adc | static  (otlp-only)
       headers: {}                        # otlp-only, when authMode=static
@@ -81,6 +80,7 @@ reporters:
 - **`authMode` enum** generalises auth. Three small values cover today's needs (none for Collector, gcp-adc for `telemetry.googleapis.com`, static for customer-managed bearer/basic) without speculative depth.
 - **`exporter: none`** disables a single pipeline cleanly without touching the top-level `enabled` flag — useful for tests, dry runs, gradual rollout.
 - **`logs.exporter: gcloud`** preserves the existing native GCL `entries:write` path. Traces have no equivalent native path, so `traces.exporter` accepts only `otlp`.
+- **ADC-only for GCP auth.** Both the GCL native exporter and the OTLP exporter (when `authMode: gcp-adc`) authenticate via Application Default Credentials. The previous `credentialsFile` option is removed — on GKE this means Workload Identity, locally it means `gcloud auth application-default login`, in CI it means a mounted service-account key resolved by `GOOGLE_APPLICATION_CREDENTIALS`. ADC already covers all three transparently, so a dedicated config field was redundant and gave a second way to misconfigure.
 
 ### Backward compatibility
 
@@ -97,7 +97,8 @@ For one release, the existing flat property names are read as fallbacks into the
 | `reporters.otellogs.reportMessageMetrics` | `reporters.otellogs.logs.reportMessageMetrics` |
 | `reporters.otellogs.gcloud.projectId` | `reporters.otellogs.resource.gcp.projectId` |
 | `reporters.otellogs.gcloud.logName` | `reporters.otellogs.logs.logName` |
-| `reporters.otellogs.gcloud.credentialsFile` | `reporters.otellogs.logs.credentialsFile` |
+
+`reporters.otellogs.gcloud.credentialsFile` is removed with no replacement; if set, the bridge logs a single `WARN` at startup that the property is unsupported and ADC will be used instead.
 
 Each legacy key in use logs a single `WARN` at startup naming the new key. Trace configuration has no legacy alias — it is only addressable under `traces:`.
 
@@ -249,7 +250,7 @@ src/main/java/io/gravitee/reporter/otellogs/
 - **Unit — `TraceContextResolver`**: traceparent precedence over correlation header; deterministic trace ID from header; fresh ID when neither present; same input ⇒ same trace ID across log and span mappers.
 - **Unit — `OtlpAuthHeaders`**: ADC token refresh between calls, header shape, refresh failure surfaces as `UncheckedIOException`.
 - **Unit — `GcpOtelResource`**: required attributes under GKE, GCE, and unknown environments; `gcp.project_id` always set when projectId resolved.
-- **Unit — `LegacyConfigBridge`**: each legacy key maps to the right new key; explicit new-key value wins over legacy; deprecation warning logged exactly once per legacy key in use.
+- **Unit — `LegacyConfigBridge`**: each legacy key maps to the right new key; explicit new-key value wins over legacy; deprecation warning logged exactly once per legacy key in use; `gcloud.credentialsFile` is ignored with a single "unsupported, ADC will be used" warning.
 - **Integration — extend `OtelLogsReporterIT`**: mock OTLP receiver captures spans; assert one span per request, parent linkage from inbound `traceparent`, span's `trace_id` equals the linked log entry's `trace_id`, span attributes include HTTP method/status/route.
 
 ---
