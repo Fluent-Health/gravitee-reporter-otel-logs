@@ -15,6 +15,7 @@
  */
 package io.gravitee.reporter.otellogs.mapper;
 
+import io.gravitee.gateway.api.http.HttpHeaders;
 import io.gravitee.reporter.api.common.Request;
 import io.gravitee.reporter.api.common.Response;
 import io.gravitee.reporter.api.v4.log.Log;
@@ -29,14 +30,16 @@ import io.opentelemetry.api.logs.Severity;
  * <p>The Log v4 class stores metadata on sub-objects (entrypointRequest / entrypointResponse).
  * Raw HTTP method, URI, and response status come from those sub-objects.
  *
- * <p>Two compliance-sensitive flags control what extra data is forwarded:
+ * <p>Three compliance-sensitive flags control what extra data is forwarded:
  * <ul>
  *   <li>{@code includeHeaders} — attach JSON-encoded request/response header maps as
  *       {@code http.request.headers} / {@code http.response.headers}.
  *   <li>{@code includePayloads} — attach raw bodies as {@code http.request.body} /
  *       {@code http.response.body}.
+ *   <li>{@code includeAuthClaims} — decode the Bearer JWT in {@code Authorization}
+ *       and attach {@code auth.aud}, {@code auth.sub}, {@code auth.iss}, {@code auth.exp}.
  * </ul>
- * Both default to false and must be combined with {@code logs.reportRequestLogs: true}
+ * All default to false and must be combined with {@code logs.reportRequestLogs: true}
  * to take effect. They rely on the upstream API logging filter to omit anything
  * sensitive — this mapper does not scrub.
  */
@@ -44,10 +47,21 @@ public class LogToLogRecordMapper {
 
   private final boolean includePayloads;
   private final boolean includeHeaders;
+  private final boolean includeAuthClaims;
 
-  public LogToLogRecordMapper(boolean includePayloads, boolean includeHeaders) {
+  public LogToLogRecordMapper(
+    boolean includePayloads,
+    boolean includeHeaders,
+    boolean includeAuthClaims
+  ) {
     this.includePayloads = includePayloads;
     this.includeHeaders = includeHeaders;
+    this.includeAuthClaims = includeAuthClaims;
+  }
+
+  /** Back-compat constructor used by tests that don't exercise auth claims. */
+  public LogToLogRecordMapper(boolean includePayloads, boolean includeHeaders) {
+    this(includePayloads, includeHeaders, false);
   }
 
   public OtelLogRecord map(Log log) {
@@ -114,6 +128,26 @@ public class LogToLogRecordMapper {
       if (resp != null && resp.getBody() != null && !resp.getBody().isEmpty()) {
         b.put(AttributeKey.stringKey("http.response.body"), resp.getBody());
       }
+    }
+    if (includeAuthClaims) {
+      HttpHeaders headers = (req != null) ? req.getHeaders() : null;
+      String authHeader = (headers != null)
+        ? headers.get("Authorization")
+        : null;
+      JwtClaims.fromAuthorizationHeader(authHeader).ifPresent(claims -> {
+        if (claims.aud() != null) {
+          b.put(AttributeKey.stringKey("auth.aud"), claims.aud());
+        }
+        if (claims.sub() != null) {
+          b.put(AttributeKey.stringKey("auth.sub"), claims.sub());
+        }
+        if (claims.iss() != null) {
+          b.put(AttributeKey.stringKey("auth.iss"), claims.iss());
+        }
+        if (claims.exp() != null) {
+          b.put(AttributeKey.longKey("auth.exp"), claims.exp());
+        }
+      });
     }
 
     return new OtelLogRecord(
