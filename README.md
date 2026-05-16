@@ -58,6 +58,7 @@ Add a `reporters.otellogs` block to `gravitee.yml`. Configuration is grouped int
 | `logs.reportRequestSummary` | boolean | `true` | Emit a per-request "summary" record from `Metrics` events. Set `false` (with `reportRequestLogs: true`) to suppress it and rely solely on the detailed Log-derived record — one log per request instead of two. |
 | `logs.reportHeaders` | boolean | `false` | **Dev/stage only.** Attaches request/response headers as JSON-encoded `http.request.headers` / `http.response.headers` attributes on every log record that has them — summary (Metrics-derived) and detail (Log-derived) alike. **Keep `false` in production environments handling PII/PHI.** |
 | `logs.reportPayloads` | boolean | `false` | **Dev/stage only.** Attaches request/response bodies as `http.request.body` / `http.response.body` attributes on every log record that has them — summary and detail alike. Bodies must already be filtered upstream by the API logging config. **Keep `false` in production environments handling PII/PHI.** |
+| `logs.reportAuthClaims` | boolean | `false` | **Dev/stage only.** When the request carries `Authorization: Bearer <jwt>`, decodes the payload and attaches `auth.aud`, `auth.sub`, `auth.iss`, `auth.exp` to the detailed (`reportRequestLogs`-derived) log record. Signature is **not** validated — claims are surfaced for click-through to AM admin, not for authz decisions. Decode failures (JWE, malformed token, non-JSON payload) silently emit no fields. **Keep `false` in production environments handling PII/PHI.** |
 
 #### `traces.*` — span export
 
@@ -173,6 +174,7 @@ reporters:
       reportRequestSummary: false   # suppress the Metrics-derived summary so we get ONE log per request
       reportHeaders: true           # include headers as JSON attributes
       reportPayloads: true          # include bodies as attributes — do NOT enable in production
+      reportAuthClaims: true        # decode Bearer JWT and attach auth.aud/sub/iss/exp on the detailed record
     resource:
       gcp:
         projectId: "your-gcp-project-id"
@@ -376,6 +378,17 @@ Attributes by event type:
 **Log (request/response metadata, opt-in via `logs.reportRequestLogs: true`):** `api.name`, `http.method`, `http.status`, `log.request.headers_count`, `log.response.headers_count`.
 
 **Headers and bodies (`logs.reportHeaders` / `logs.reportPayloads`, both dev/stage only):** when these flags are set, **every** log record that has access to entrypoint headers and bodies — both Metrics-derived summary records and Log-derived detail records — carries `http.request.headers` / `http.response.headers` (JSON-encoded) and `http.request.body` / `http.response.body` (raw string) attributes.
+
+**Auth claims (`logs.reportAuthClaims`, dev/stage only, detailed records only):** when the flag is on and the request carries `Authorization: Bearer <jwt>`, the JWT payload is decoded and these claims are attached to the **detailed** (Log-derived) record — not the summary record:
+
+| Attribute | Source claim | Type | Notes |
+|---|---|---|---|
+| `auth.aud` | `aud` | string | First element when the claim is an array (the AM application ID is single-valued in practice). |
+| `auth.sub` | `sub` | string | AM user ID. |
+| `auth.iss` | `iss` | string | Issuer (typically the AM domain URL). |
+| `auth.exp` | `exp` | int64 | Unix epoch seconds. Useful for explaining `401`s after the fact. |
+
+Signature is not validated — the gateway has already authenticated the request by the time the reporter sees it; the reporter only reads the payload for human navigation. JWE tokens and malformed JWTs decode to nothing and the fields are silently omitted.
 
 #### Traces signal
 

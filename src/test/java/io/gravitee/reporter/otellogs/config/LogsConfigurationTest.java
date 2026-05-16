@@ -41,6 +41,7 @@ class LogsConfigurationTest {
     cfg.setReportHealthChecks(true);
     cfg.setReportRequestLogs(false);
     cfg.setReportMessageMetrics(true);
+    cfg.setReportAuthClaims(true);
 
     assertThat(cfg.isEnabled()).isTrue();
     assertThat(cfg.getExporter()).isEqualTo("gcloud");
@@ -52,6 +53,7 @@ class LogsConfigurationTest {
     assertThat(cfg.isReportHealthChecks()).isTrue();
     assertThat(cfg.isReportRequestLogs()).isFalse();
     assertThat(cfg.isReportMessageMetrics()).isTrue();
+    assertThat(cfg.isReportAuthClaims()).isTrue();
   }
 
   @Test

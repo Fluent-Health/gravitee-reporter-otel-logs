@@ -98,6 +98,14 @@ public class LogsConfiguration {
   @Value("${reporters.otellogs.logs.reportRequestSummary:true}")
   private boolean reportRequestSummary;
 
+  // Decode the Bearer JWT in the Authorization header and emit its aud/sub/
+  // iss/exp claims as auth.* attributes on the detailed Log-derived record.
+  // Used by dashboards to click through from a log row to AM admin without
+  // copy-pasting the token. Signature is NOT validated — claims are surfaced
+  // for human navigation only.
+  @Value("${reporters.otellogs.logs.reportAuthClaims:false}")
+  private boolean reportAuthClaims;
+
   public boolean isEnabled() {
     return enabled;
   }
@@ -209,5 +217,13 @@ public class LogsConfiguration {
 
   public void setReportRequestSummary(boolean v) {
     this.reportRequestSummary = v;
+  }
+
+  public boolean isReportAuthClaims() {
+    return reportAuthClaims;
+  }
+
+  public void setReportAuthClaims(boolean v) {
+    this.reportAuthClaims = v;
   }
 }

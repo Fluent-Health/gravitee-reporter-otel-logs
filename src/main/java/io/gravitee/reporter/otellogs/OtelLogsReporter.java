@@ -81,7 +81,8 @@ public class OtelLogsReporter
     );
     this.logMapper = new LogToLogRecordMapper(
       cfg.getLogs().isReportPayloads(),
-      cfg.getLogs().isReportHeaders()
+      cfg.getLogs().isReportHeaders(),
+      cfg.getLogs().isReportAuthClaims()
     );
     this.endpointMapper = new EndpointStatusToLogRecordMapper();
     this.messageMapper = new MessageMetricsToLogRecordMapper();
