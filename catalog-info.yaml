@@ -22,6 +22,7 @@ metadata:
   annotations:
     github.com/project-slug: Fluent-Health/gravitee-reporter-otel-logs
     fluentinhealth.com/oss: published
+    backstage.io/techdocs-ref: dir:.
 spec:
   type: library
   lifecycle: production

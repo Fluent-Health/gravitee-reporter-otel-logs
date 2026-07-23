@@ -1,0 +1,10 @@
+site_name: gravitee-reporter-otel-logs
+site_description: Gravitee APIM reporter plugin that emits structured per-request log records via OpenTelemetry OTLP to Google Cloud Logging.
+
+nav:
+  - Plans:
+      - OTel Logs Reporter: superpowers/plans/2026-05-11-otel-logs-reporter.md
+      - OTel Tracing & Config Redesign: superpowers/plans/2026-05-15-otel-tracing-and-config-redesign.md
+  - Specs:
+      - OTel Logs Reporter Design: superpowers/specs/2026-05-11-otel-logs-reporter-design.md
+      - OTel Tracing & Config Redesign Design: superpowers/specs/2026-05-15-otel-tracing-and-config-redesign-design.md
