@@ -220,6 +220,18 @@ mvn verify --activate-profiles gcloud-integration-test
 
 Writes a uniquely-identified log record to Cloud Logging via the REST API and polls for up to 90 seconds until it appears, verifying end-to-end credential validity, write, and readback.
 
+**E2E test against a full Gravitee stack** (Docker required — boots APIM management + gateway, MongoDB and an OTel Collector, ~2–3 minutes):
+
+```bash
+mvn verify --activate-profiles e2e-test -Dit.test=OtelLogsReporterIT
+```
+
+Defaults to the newest supported APIM; override with `-Dapim.version=4.12.0`. This is the only version-sensitive suite — the other profiles exercise the OTel Collector and Cloud Logging rather than the gateway — so CI runs it across an APIM matrix (`.github/workflows/integration-matrix.yml`) while the rest run once.
+
+## Compatibility
+
+A single artifact covers **APIM 4.9 through 4.12**, verified end to end against 4.9.13, 4.12.0 and 4.12.12. No code changes were needed for APIM 4.12 (including its move to Vert.x 5), because this reporter bundles the OpenTelemetry SDK, which the gateway does not ship in the same package namespace — so there is no class-resolution collision of the kind that affects plugins bundling a library the gateway also provides.
+
 ## Deployment
 
 Releases follow **semver tagging**. To publish a new release:

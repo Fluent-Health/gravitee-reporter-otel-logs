@@ -28,8 +28,8 @@ jobs:
       - name: Integration tests (TestContainers — OTel Collector + Loki)
         run: mvn verify -Pintegration-test -q
 
-      - name: E2E tests (Full Gravitee Stack)
-        run: mvn verify -Pe2e-test -Dit.test=OtelLogsReporterIT -q
+      # The full-Gravitee-stack E2E moved to the `e2e` job below, which runs it
+      # against every supported APIM version instead of just the default one.
 
       # Auth is placed here so the credentials file written by the action is not
       # present when prettier runs during `mvn test` above (prettier scans the
@@ -54,3 +54,11 @@ jobs:
           # the Maven artifactId in pom.xml.
           path: target/gravitee-reporter-otellogs-*.zip
           retention-days: 7
+
+  # Full-Gravitee-stack E2E against each supported APIM version. The matrix lives
+  # in .github/workflows/integration-matrix.yml so CI and Release cannot drift.
+  e2e:
+    needs: build
+    permissions:
+      contents: read
+    uses: ./.github/workflows/integration-matrix.yml

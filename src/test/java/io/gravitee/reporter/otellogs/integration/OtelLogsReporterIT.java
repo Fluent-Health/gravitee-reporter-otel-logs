@@ -127,7 +127,7 @@ class OtelLogsReporterIT {
 
     // 3. Management API.
     managementApi = new GenericContainer<>(
-      "graviteeio/apim-management-api:4.9.13"
+      "graviteeio/apim-management-api:" + TestVersions.APIM
     )
       .withNetwork(NETWORK)
       .withNetworkAliases("management-api")
@@ -142,7 +142,10 @@ class OtelLogsReporterIT {
       .dependsOn(mongodb)
       .withLogConsumer(filteredLogConsumer("management-api"))
       .waitingFor(
-        Wait.forHttp("/_node/health").forPort(18083).forStatusCode(200)
+        Wait.forHttp("/_node/health")
+          .forPort(18083)
+          .forStatusCode(200)
+          .withStartupTimeout(TestVersions.CONTAINER_STARTUP_TIMEOUT)
       );
 
     // 4. Mock backend the gateway proxies to.
@@ -154,7 +157,9 @@ class OtelLogsReporterIT {
       .waitingFor(Wait.forHttp("/get").forPort(8080).forStatusCode(200));
 
     // 5. Gateway with the plugin installed and pointed at the collector.
-    gateway = new GenericContainer<>("graviteeio/apim-gateway:4.9.13")
+    gateway = new GenericContainer<>(
+      "graviteeio/apim-gateway:" + TestVersions.APIM
+    )
       .withCreateContainerCmdModifier(cmd -> cmd.withUser("root"))
       .withNetwork(NETWORK)
       .withNetworkAliases("gateway")
@@ -184,7 +189,10 @@ class OtelLogsReporterIT {
       .dependsOn(managementApi, collector)
       .withLogConsumer(filteredLogConsumer("gateway"))
       .waitingFor(
-        Wait.forHttp("/_node/health").forPort(18082).forStatusCode(200)
+        Wait.forHttp("/_node/health")
+          .forPort(18082)
+          .forStatusCode(200)
+          .withStartupTimeout(TestVersions.CONTAINER_STARTUP_TIMEOUT)
       );
 
     Startables.deepStart(gateway, httpbin).join();
