@@ -1,0 +1,52 @@
+name: E2E matrix
+
+# Reusable workflow. Runs the full-Gravitee-stack E2E test against every APIM
+# version this reporter is expected to support.
+#
+# Only OtelLogsReporterIT is version-sensitive — it boots real APIM containers.
+# The other IT profiles (-Pintegration-test, -Pgcloud-integration-test) exercise
+# the OTel Collector and Google Cloud Logging instead, so they run once in the
+# build job rather than once per APIM version.
+#
+# Legs are explicitly pinned rather than tracking the floating `latest` Docker
+# tag, so CI stays deterministic and moving a pin is always a deliberate,
+# reviewable change.
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: APIM ${{ matrix.apim }}
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    strategy:
+      # Report every leg. A break on one version must not hide the others.
+      fail-fast: false
+      matrix:
+        apim:
+          # Floor of the 4.12 line — the first release on Vert.x 5, and the
+          # first to ship a Prometheus client in the gateway itself.
+          - "4.12.0"
+          # Latest published release: early warning for upstream breakage.
+          - "4.12.12"
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-java@v5
+        with:
+          java-version: "21"
+          distribution: "temurin"
+          cache: maven
+
+      - name: E2E tests (Full Gravitee Stack)
+        run: >
+          mvn verify -Pe2e-test -Dit.test=OtelLogsReporterIT -q
+          -Dapim.version=${{ matrix.apim }}

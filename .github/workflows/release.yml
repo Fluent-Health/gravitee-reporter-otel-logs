@@ -8,7 +8,17 @@ permissions:
   contents: read
 
 jobs:
+  # The full-Gravitee-stack E2E ran on PRs but NOT on release, so a ZIP could be
+  # published without ever having been exercised against a real gateway. Now it
+  # gates the upload, across every supported APIM version. Shares its matrix
+  # with CI so the two cannot drift.
+  e2e:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/integration-matrix.yml
+
   release:
+    needs: e2e
     runs-on: ubuntu-latest
     permissions:
       contents: write
