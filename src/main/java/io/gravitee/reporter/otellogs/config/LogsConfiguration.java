@@ -106,6 +106,11 @@ public class LogsConfiguration {
   @Value("${reporters.otellogs.logs.reportAuthClaims:false}")
   private boolean reportAuthClaims;
 
+  // Reporter-level redaction of sensitive data. Never null — a default instance means
+  // masking.enabled=false, which is the documented default. Populated as a Spring bean in
+  // OtelLogsReporterSpringConfiguration so its @Value fields bind.
+  private MaskingConfiguration masking = new MaskingConfiguration();
+
   public boolean isEnabled() {
     return enabled;
   }
@@ -225,5 +230,13 @@ public class LogsConfiguration {
 
   public void setReportAuthClaims(boolean v) {
     this.reportAuthClaims = v;
+  }
+
+  public MaskingConfiguration getMasking() {
+    return masking;
+  }
+
+  public void setMasking(MaskingConfiguration v) {
+    this.masking = v == null ? new MaskingConfiguration() : v;
   }
 }

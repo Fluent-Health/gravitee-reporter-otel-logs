@@ -277,6 +277,114 @@ class OtelLogsReporterTest {
     verify(writer, never()).emit(any());
   }
 
+  // ===== masking startup guard =====
+
+  @Test
+  void warnsWhenHeaderReportingIsOnButMaskingIsOff() {
+    LogsConfiguration logs = new LogsConfiguration();
+    logs.setEnabled(true);
+    logs.setReportHeaders(true);
+
+    assertThat(OtelLogsReporter.shouldWarnMaskingOff(logs)).isTrue();
+  }
+
+  @Test
+  void warnsWhenPayloadReportingIsOnButMaskingIsOff() {
+    LogsConfiguration logs = new LogsConfiguration();
+    logs.setEnabled(true);
+    logs.setReportPayloads(true);
+
+    assertThat(OtelLogsReporter.shouldWarnMaskingOff(logs)).isTrue();
+  }
+
+  @Test
+  void doesNotWarnWhenMaskingIsOn() {
+    LogsConfiguration logs = new LogsConfiguration();
+    logs.setEnabled(true);
+    logs.setReportHeaders(true);
+    logs.getMasking().setEnabled(true);
+
+    assertThat(OtelLogsReporter.shouldWarnMaskingOff(logs)).isFalse();
+  }
+
+  @Test
+  void warnsEvenWhenHeadersAndPayloadsAreBothOff() {
+    // Deliberately inverted from the original assertion, which required reportHeaders or
+    // reportPayloads. Those flags gate only the header and body attributes; http.url
+    // (query string included), upstream.endpoint, error.message and the record body itself
+    // are emitted on EVERY record regardless, and all of them demonstrably carry credentials.
+    // Under the old predicate the default production config — headers and payloads off —
+    // warned about nothing while still shipping tokens to Cloud Logging.
+    LogsConfiguration logs = new LogsConfiguration();
+    logs.setEnabled(true);
+
+    assertThat(logs.isReportHeaders()).isFalse();
+    assertThat(logs.isReportPayloads()).isFalse();
+    assertThat(OtelLogsReporter.shouldWarnMaskingOff(logs)).isTrue();
+  }
+
+  @Test
+  void doesNotWarnWhenLogsAreDisabledEntirely() {
+    LogsConfiguration logs = new LogsConfiguration();
+    logs.setEnabled(false);
+    logs.setReportHeaders(true);
+
+    assertThat(OtelLogsReporter.shouldWarnMaskingOff(logs)).isFalse();
+  }
+
+  @Test
+  void buildsAMaskingSanitizerWhenMaskingIsEnabled() throws Exception {
+    var cfg = OtelTestSupport.config();
+    cfg.getLogs().setReportHeaders(true);
+    cfg.getLogs().getMasking().setEnabled(true);
+
+    var reporter = new OtelLogsReporter(cfg);
+
+    // The reporter must hand the SAME masking sanitizer to both mappers, otherwise
+    // summary records and detail records disagree about what is sensitive.
+    assertThat(sanitizerOf(reporter, "metricsMapper")).isSameAs(
+      sanitizerOf(reporter, "logMapper")
+    );
+  }
+
+  @Test
+  void sharesOneSanitizerWithTheSpanMapperToo() throws Exception {
+    // Spans go to a different sink from logs. If the span mapper had its own sanitizer —
+    // or none — the trace sink would leak exactly what the log sink masks.
+    var cfg = OtelTestSupport.config();
+    cfg.getLogs().getMasking().setEnabled(true);
+    cfg.getLogs().setAuthMode("none");
+    cfg.getTraces().setEnabled(true);
+    cfg.getTraces().setEndpoint("http://localhost:4318/v1/traces");
+    cfg.getTraces().setAuthMode("none");
+    cfg.getTraces().setSampler("always-on");
+    cfg.getTraces().setBatchSize(512);
+    cfg.getTraces().setScheduledDelayMs(5000);
+
+    var reporter = new OtelLogsReporter(cfg);
+    try {
+      reporter.start();
+
+      assertThat(sanitizerOf(reporter, "spanMapper")).isSameAs(
+        sanitizerOf(reporter, "metricsMapper")
+      );
+    } finally {
+      reporter.stop();
+    }
+  }
+
+  private static Object sanitizerOf(
+    OtelLogsReporter reporter,
+    String mapperField
+  ) throws Exception {
+    var mapperFieldRef = OtelLogsReporter.class.getDeclaredField(mapperField);
+    mapperFieldRef.setAccessible(true);
+    Object mapper = mapperFieldRef.get(reporter);
+    var sanitizerField = mapper.getClass().getDeclaredField("sanitizer");
+    sanitizerField.setAccessible(true);
+    return sanitizerField.get(mapper);
+  }
+
   // ===== helpers =====
 
   private static void inject(Object target, String fieldName, Object value)

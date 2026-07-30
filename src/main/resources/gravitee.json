@@ -80,6 +80,22 @@
           "default": false,
           "description": "Include request and response headers as JSON-encoded http.request.headers / http.response.headers attributes on Log records. Requires logs.reportRequestLogs=true. Same compliance posture as reportPayloads: headers commonly contain auth tokens, so keep disabled in production environments handling PII/PHI."
         },
+        "masking": {
+          "type": "object",
+          "title": "Masking settings",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": false,
+              "description": "Redact sensitive headers, bodies, query strings, and error messages before export. Replaces the EE data-logging-masking policy. Enable in any environment where headers or payloads are reported."
+            },
+            "extraHeaders": {
+              "type": "string",
+              "default": "",
+              "description": "Comma-separated header names to mask in addition to the built-in list. Entries ending in '*' match by prefix (e.g. 'x-tenant-*'). Additive only — cannot remove a built-in."
+            }
+          }
+        },
         "reportRequestSummary": {
           "type": "boolean",
           "default": true,

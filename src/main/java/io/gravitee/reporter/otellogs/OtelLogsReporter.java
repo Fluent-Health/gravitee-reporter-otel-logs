@@ -23,6 +23,7 @@ import io.gravitee.reporter.api.health.EndpointStatus;
 import io.gravitee.reporter.api.v4.log.Log;
 import io.gravitee.reporter.api.v4.metric.MessageMetrics;
 import io.gravitee.reporter.api.v4.metric.Metrics;
+import io.gravitee.reporter.otellogs.config.LogsConfiguration;
 import io.gravitee.reporter.otellogs.config.OtelLogsReporterConfiguration;
 import io.gravitee.reporter.otellogs.mapper.EndpointStatusToLogRecordMapper;
 import io.gravitee.reporter.otellogs.mapper.LogToLogRecordMapper;
@@ -31,6 +32,7 @@ import io.gravitee.reporter.otellogs.mapper.MetricsToLogRecordMapper;
 import io.gravitee.reporter.otellogs.mapper.MetricsToSpanMapper;
 import io.gravitee.reporter.otellogs.mapper.OtelLogRecord;
 import io.gravitee.reporter.otellogs.mapper.TraceContextResolver;
+import io.gravitee.reporter.otellogs.sanitize.PiiSanitizer;
 import io.gravitee.reporter.otellogs.writer.CustomOtlpHttpLogRecordExporter;
 import io.gravitee.reporter.otellogs.writer.CustomOtlpHttpSpanExporter;
 import io.gravitee.reporter.otellogs.writer.GclLogRecordExporter;
@@ -66,6 +68,13 @@ public class OtelLogsReporter
   private final EndpointStatusToLogRecordMapper endpointMapper;
   private final MessageMetricsToLogRecordMapper messageMapper;
 
+  /**
+   * Held as a field, not just a constructor local, because the span mapper is built later in
+   * {@link #doStart()} and must share this exact instance: logs and traces go to different sinks, so
+   * disagreeing about what is sensitive means one sink leaks what the other masks.
+   */
+  private final PiiSanitizer sanitizer;
+
   private OtelLogWriter writer;
   private OtelTraceWriter traceWriter;
   private MetricsToSpanMapper spanMapper;
@@ -74,18 +83,42 @@ public class OtelLogsReporter
   public OtelLogsReporter(OtelLogsReporterConfiguration cfg) {
     log.info("OTelLogsReporter constructor called with cfg: {}", cfg);
     this.cfg = cfg;
+    // One sanitizer shared by every mapper: summary, detail and span records must agree on
+    // what counts as sensitive. Resolves to a no-op when masking.enabled=false.
+    this.sanitizer = PiiSanitizer.from(cfg.getLogs().getMasking());
     this.metricsMapper = new MetricsToLogRecordMapper(
       cfg,
       cfg.getLogs().isReportPayloads(),
-      cfg.getLogs().isReportHeaders()
+      cfg.getLogs().isReportHeaders(),
+      sanitizer
     );
     this.logMapper = new LogToLogRecordMapper(
       cfg.getLogs().isReportPayloads(),
       cfg.getLogs().isReportHeaders(),
-      cfg.getLogs().isReportAuthClaims()
+      cfg.getLogs().isReportAuthClaims(),
+      sanitizer
     );
     this.endpointMapper = new EndpointStatusToLogRecordMapper();
     this.messageMapper = new MessageMetricsToLogRecordMapper();
+  }
+
+  /**
+   * True whenever logs are enabled and masking is off — deliberately NOT conditioned on
+   * reportHeaders/reportPayloads.
+   *
+   * <p>Those two flags gate only the header and body attributes. {@code http.url},
+   * {@code upstream.endpoint}, {@code error.message} and the record body itself are emitted on every
+   * record regardless, and all four demonstrably carry credentials and PII: a query-string
+   * {@code access_token}, or the AM response body that the EMR policy templates into
+   * {@code errorMessage}. Gating the warning on those flags meant the default production config —
+   * headers and payloads off — warned about nothing at all while still shipping tokens.
+   *
+   * <p>Extracted as a static predicate so it is unit-testable without capturing log output, and
+   * package-private so tests can reach it. Mirrors the existing degenerate-config warning for
+   * reportRequestSummary/reportRequestLogs in {@code doStart}.
+   */
+  static boolean shouldWarnMaskingOff(LogsConfiguration logs) {
+    return logs.isEnabled() && !logs.getMasking().isEnabled();
   }
 
   @Override
@@ -116,6 +149,15 @@ public class OtelLogsReporter
           "logs.enabled=true but both reportRequestSummary=false and reportRequestLogs=false — no per-request log records will be emitted"
         );
       }
+      if (shouldWarnMaskingOff(cfg.getLogs())) {
+        log.warn(
+          "logs.masking.enabled=false — content will be written to the log sink UNMASKED. " +
+            "This applies even with reportHeaders/reportPayloads off: http.url (including its query string), " +
+            "upstream.endpoint, error.message and the log record message are emitted on every record and are " +
+            "not gated by those flags. With reportHeaders/reportPayloads on, raw headers and bodies are written too. " +
+            "Set reporters.otellogs.logs.masking.enabled=true unless this is a development gateway."
+        );
+      }
     }
 
     if (cfg.getTraces().isEnabled() && this.traceWriter == null) {
@@ -131,7 +173,8 @@ public class OtelLogsReporter
       );
       this.spanMapper = new MetricsToSpanMapper(
         traceWriter.tracer(),
-        new TraceContextResolver(cfg.getCorrelationHeader())
+        new TraceContextResolver(cfg.getCorrelationHeader()),
+        sanitizer
       );
       log.info(
         "OTel traces pipeline started — endpoint={} authMode={}",
