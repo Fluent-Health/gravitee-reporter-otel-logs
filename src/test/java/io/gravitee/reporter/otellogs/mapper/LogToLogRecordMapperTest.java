@@ -19,6 +19,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 
 import io.gravitee.reporter.otellogs.OtelTestSupport;
+import io.gravitee.reporter.otellogs.config.MaskingConfiguration;
+import io.gravitee.reporter.otellogs.sanitize.PiiSanitizer;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.logs.Severity;
 import java.nio.charset.StandardCharsets;
@@ -230,6 +232,135 @@ class LogToLogRecordMapperTest {
       .as("response headers should be JSON-encoded")
       .contains("\"Content-Type\"")
       .contains("\"application/json\"");
+  }
+
+  // ---- masking (PiiSanitizer) ---------------------------------------------
+
+  private static PiiSanitizer maskingSanitizer() {
+    MaskingConfiguration cfg = new MaskingConfiguration();
+    cfg.setEnabled(true);
+    return PiiSanitizer.from(cfg);
+  }
+
+  @Test
+  void masksSensitiveHeadersOnDetailRecords() {
+    var mapper = new LogToLogRecordMapper(
+      false,
+      true,
+      false,
+      maskingSanitizer()
+    );
+    var log = OtelTestSupport.log(200);
+    log
+      .getEntrypointRequest()
+      .getHeaders()
+      .set("Authorization", "Bearer secret-token");
+    log
+      .getEntrypointRequest()
+      .getHeaders()
+      .set("Accept", "application/fhir+json");
+
+    String json = mapper
+      .map(log)
+      .attributes()
+      .get(AttributeKey.stringKey("http.request.headers"));
+
+    assertThat(json).doesNotContain("secret-token");
+    assertThat(json).contains("application/fhir+json");
+  }
+
+  @Test
+  void masksFhirPayloadsOnDetailRecords() {
+    var mapper = new LogToLogRecordMapper(
+      true,
+      false,
+      false,
+      maskingSanitizer()
+    );
+    var log = OtelTestSupport.log(200);
+    log
+      .getEntrypointRequest()
+      .setBody("{\"name\":[{\"given\":[\"Jane\"],\"family\":\"Doe\"}]}");
+
+    String body = mapper
+      .map(log)
+      .attributes()
+      .get(AttributeKey.stringKey("http.request.body"));
+
+    assertThat(body).doesNotContain("Jane").doesNotContain("Doe");
+  }
+
+  @Test
+  void stillDecodesAuthClaimsWhenAuthorizationIsMasked() {
+    // Masking rewrites the SERIALISED header attribute, not the HttpHeaders object,
+    // so claim decoding reads the raw token and auth.* stays populated. auth.* is
+    // deliberately exempt from masking — it exists for AM click-through.
+    var mapper = new LogToLogRecordMapper(
+      false,
+      true,
+      true,
+      maskingSanitizer()
+    );
+    var log = OtelTestSupport.log(200);
+    String token = jwt("{\"aud\":\"app-1\",\"sub\":\"user-7\"}");
+    log
+      .getEntrypointRequest()
+      .getHeaders()
+      .set("Authorization", "Bearer " + token);
+
+    var record = mapper.map(log);
+
+    assertThat(
+      record.attributes().get(AttributeKey.stringKey("auth.sub"))
+    ).isEqualTo("user-7");
+    assertThat(
+      record.attributes().get(AttributeKey.stringKey("http.request.headers"))
+    ).doesNotContain(token);
+  }
+
+  @Test
+  void masksQueryStringInHttpUrlOnDetailRecords() {
+    var mapper = new LogToLogRecordMapper(
+      false,
+      false,
+      false,
+      maskingSanitizer()
+    );
+    var log = OtelTestSupport.log(200);
+    log.getEntrypointRequest().setUri("/Patient?access_token=abc123");
+
+    String url = mapper
+      .map(log)
+      .attributes()
+      .get(AttributeKey.stringKey("http.url"));
+
+    assertThat(url).doesNotContain("abc123");
+  }
+
+  @Test
+  void masksTheQueryStringInTheRecordBodyOnDetailRecords() {
+    // The body becomes Cloud Logging's `message` field. Built from sanitizePath() alone it
+    // shipped the raw query string next to the masked http.url attribute.
+    var mapper = new LogToLogRecordMapper(
+      false,
+      false,
+      false,
+      maskingSanitizer()
+    );
+    var log = OtelTestSupport.log(200);
+    log
+      .getEntrypointRequest()
+      .setUri("/Patient?access_token=abc123&email=jane@example.com");
+
+    var record = mapper.map(log);
+
+    assertThat(record.body())
+      .doesNotContain("abc123")
+      .doesNotContain("jane@example.com")
+      .contains("[REDACTED]");
+    assertThat(record.body()).contains(
+      record.attributes().get(AttributeKey.stringKey("http.url"))
+    );
   }
 
   // ---- auth.* claims (reportAuthClaims flag) -----------------------------

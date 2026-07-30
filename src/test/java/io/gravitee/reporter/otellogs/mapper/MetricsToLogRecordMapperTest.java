@@ -17,7 +17,10 @@ package io.gravitee.reporter.otellogs.mapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.gravitee.reporter.api.v4.metric.Metrics;
 import io.gravitee.reporter.otellogs.OtelTestSupport;
+import io.gravitee.reporter.otellogs.config.MaskingConfiguration;
+import io.gravitee.reporter.otellogs.sanitize.PiiSanitizer;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.logs.Severity;
 import java.util.Map;
@@ -370,5 +373,129 @@ class MetricsToLogRecordMapperTest {
     assertThat(
       record.attributes().get(AttributeKey.stringKey("http.request.body"))
     ).isNull();
+  }
+
+  // ===== masking on the summary path =====
+
+  private static PiiSanitizer maskingSanitizer() {
+    MaskingConfiguration cfg = new MaskingConfiguration();
+    cfg.setEnabled(true);
+    return PiiSanitizer.from(cfg);
+  }
+
+  private static MetricsToLogRecordMapper maskingMapper(
+    boolean includePayloads,
+    boolean includeHeaders
+  ) {
+    return new MetricsToLogRecordMapper(
+      OtelTestSupport.config(),
+      includePayloads,
+      includeHeaders,
+      maskingSanitizer()
+    );
+  }
+
+  @Test
+  void masksSensitiveRequestHeadersWhenMaskingIsEnabled() {
+    Metrics m = OtelTestSupport.metricsWithHeaders(
+      200,
+      Map.of(
+        "Authorization",
+        "Bearer secret-token",
+        "Content-Type",
+        "application/fhir+json"
+      )
+    );
+
+    String json = maskingMapper(false, true)
+      .map(m)
+      .attributes()
+      .get(AttributeKey.stringKey("http.request.headers"));
+
+    assertThat(json).doesNotContain("secret-token");
+    assertThat(json).contains("application/fhir+json");
+  }
+
+  @Test
+  void masksQueryStringInHttpUrl() {
+    Metrics m = OtelTestSupport.metrics(200);
+    m.setUri("/Patient?access_token=abc123&email=jane@example.com");
+
+    String url = maskingMapper(false, false)
+      .map(m)
+      .attributes()
+      .get(AttributeKey.stringKey("http.url"));
+
+    assertThat(url).doesNotContain("abc123").doesNotContain("jane@example.com");
+  }
+
+  @Test
+  void masksErrorMessage() {
+    Metrics m = OtelTestSupport.metrics(500);
+    m.setErrorMessage(
+      "Could not exchange token for subject '3f2504e0-4f89-11d3-9a0c-0305e82c3301': (401) denied"
+    );
+
+    String message = maskingMapper(false, false)
+      .map(m)
+      .attributes()
+      .get(AttributeKey.stringKey("error.message"));
+
+    assertThat(message)
+      .doesNotContain("3f2504e0-4f89-11d3-9a0c-0305e82c3301")
+      .contains("Could not exchange token for subject");
+  }
+
+  @Test
+  void masksTheQueryStringInTheRecordBodyToo() {
+    // The body is what GclLogRecordExporter puts in Cloud Logging's `message` field — the
+    // most-read part of the record. It used to be built from sanitizePath() alone, which
+    // never touches a query string, so the raw credential shipped in `message` right next
+    // to the masked http.url attribute.
+    Metrics m = OtelTestSupport.metrics(200);
+    m.setUri("/Patient?access_token=abc123&email=jane@example.com");
+
+    var record = maskingMapper(false, false).map(m);
+
+    assertThat(record.body())
+      .doesNotContain("abc123")
+      .doesNotContain("jane@example.com")
+      .contains("[REDACTED]");
+    // Body and attribute must agree: one sanitized URL, used twice.
+    assertThat(record.body()).contains(
+      record.attributes().get(AttributeKey.stringKey("http.url"))
+    );
+  }
+
+  @Test
+  void masksTheQueryStringInUpstreamEndpoint() {
+    // Same credentials, forwarded to the upstream URL. Templating its path segments
+    // without masking its values leaked exactly what http.url masks.
+    Metrics m = OtelTestSupport.metrics(200);
+    m.setEndpoint("https://emr.example.com/Patient?access_token=abc123");
+
+    String endpoint = maskingMapper(false, false)
+      .map(m)
+      .attributes()
+      .get(AttributeKey.stringKey("upstream.endpoint"));
+
+    assertThat(endpoint).doesNotContain("abc123").contains("[REDACTED]");
+  }
+
+  @Test
+  void leavesEverythingRawWhenMaskingIsDisabled() {
+    Metrics m = OtelTestSupport.metrics(200);
+    m.setUri("/Patient?access_token=abc123");
+
+    // The one- and three-argument constructors must resolve to a disabled sanitizer,
+    // matching the default-off configuration.
+    var mapper = new MetricsToLogRecordMapper(OtelTestSupport.config());
+
+    String url = mapper
+      .map(m)
+      .attributes()
+      .get(AttributeKey.stringKey("http.url"));
+
+    assertThat(url).contains("abc123");
   }
 }

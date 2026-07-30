@@ -18,6 +18,7 @@ package io.gravitee.reporter.otellogs.mapper;
 import io.gravitee.gateway.api.http.HttpHeaders;
 import io.gravitee.reporter.api.v4.log.Log;
 import io.gravitee.reporter.api.v4.metric.Metrics;
+import io.gravitee.reporter.otellogs.sanitize.PiiSanitizer;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.SpanContext;
@@ -35,6 +36,11 @@ import org.slf4j.LoggerFactory;
  * Builds a finished SERVER span per {@link Metrics} event, using the
  * recorded start/end timestamps so spans appear as already-complete rather
  * than running live in-process.
+ *
+ * <p>Spans go to the TRACE sink, a different destination from the log records, so nothing downstream
+ * of here compensates for an unmasked attribute. The URL-bearing attributes therefore get the same
+ * {@code sanitizePath} + {@link PiiSanitizer#url} treatment as their log-record counterparts, from the
+ * same sanitizer instance the log mappers hold.
  */
 public class MetricsToSpanMapper {
 
@@ -44,10 +50,21 @@ public class MetricsToSpanMapper {
 
   private final Tracer tracer;
   private final TraceContextResolver resolver;
+  private final PiiSanitizer sanitizer;
 
-  public MetricsToSpanMapper(Tracer tracer, TraceContextResolver resolver) {
+  public MetricsToSpanMapper(
+    Tracer tracer,
+    TraceContextResolver resolver,
+    PiiSanitizer sanitizer
+  ) {
     this.tracer = tracer;
     this.resolver = resolver;
+    this.sanitizer = sanitizer == null ? PiiSanitizer.disabled() : sanitizer;
+  }
+
+  /** Back-compat: no masking, matching the default-off configuration. */
+  public MetricsToSpanMapper(Tracer tracer, TraceContextResolver resolver) {
+    this(tracer, resolver, PiiSanitizer.disabled());
   }
 
   public void map(Metrics m) {
@@ -80,7 +97,7 @@ public class MetricsToSpanMapper {
         );
         if (m.getUri() != null) span.setAttribute(
           AttributeKey.stringKey("http.route"),
-          m.getUri()
+          sanitizedUrl(m.getUri())
         );
         if (m.getApiName() != null) span.setAttribute(
           AttributeKey.stringKey("gravitee.api.name"),
@@ -88,7 +105,7 @@ public class MetricsToSpanMapper {
         );
         if (m.getEndpoint() != null) span.setAttribute(
           AttributeKey.stringKey("gravitee.upstream.endpoint"),
-          m.getEndpoint()
+          sanitizedUrl(m.getEndpoint())
         );
         if (m.getStatus() >= 500) span.setStatus(
           StatusCode.ERROR,
@@ -100,6 +117,11 @@ public class MetricsToSpanMapper {
     } catch (Throwable t) {
       log.warn("Failed to map Metrics → span: {}", t.getMessage(), t);
     }
+  }
+
+  /** Path-templating plus value-shape masking, in that order — see MetricsToLogRecordMapper. */
+  private String sanitizedUrl(String uri) {
+    return sanitizer.url(OtelLabels.sanitizePath(uri));
   }
 
   private static HttpHeaders extractHeaders(Metrics m) {

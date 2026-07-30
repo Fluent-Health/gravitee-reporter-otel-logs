@@ -19,6 +19,7 @@ import io.gravitee.gateway.api.http.HttpHeaders;
 import io.gravitee.reporter.api.common.Request;
 import io.gravitee.reporter.api.common.Response;
 import io.gravitee.reporter.api.v4.log.Log;
+import io.gravitee.reporter.otellogs.sanitize.PiiSanitizer;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.common.AttributesBuilder;
@@ -40,28 +41,49 @@ import io.opentelemetry.api.logs.Severity;
  *       and attach {@code auth.aud}, {@code auth.sub}, {@code auth.iss}, {@code auth.exp}.
  * </ul>
  * All default to false and must be combined with {@code logs.reportRequestLogs: true}
- * to take effect. They rely on the upstream API logging filter to omit anything
- * sensitive — this mapper does not scrub.
+ * to take effect.
+ *
+ * <p>Sensitive content is masked by the injected {@link
+ * io.gravitee.reporter.otellogs.sanitize.PiiSanitizer} when {@code logs.masking.enabled} is true;
+ * with masking off the mapper emits whatever the upstream API logging filter passed through.
+ * {@code auth.*} claims are deliberately never masked — they exist for AM click-through.
  */
 public class LogToLogRecordMapper {
 
   private final boolean includePayloads;
   private final boolean includeHeaders;
   private final boolean includeAuthClaims;
+  private final PiiSanitizer sanitizer;
 
+  public LogToLogRecordMapper(
+    boolean includePayloads,
+    boolean includeHeaders,
+    boolean includeAuthClaims,
+    PiiSanitizer sanitizer
+  ) {
+    this.includePayloads = includePayloads;
+    this.includeHeaders = includeHeaders;
+    this.includeAuthClaims = includeAuthClaims;
+    this.sanitizer = sanitizer == null ? PiiSanitizer.disabled() : sanitizer;
+  }
+
+  /** Back-compat: no masking, matching the default-off configuration. */
   public LogToLogRecordMapper(
     boolean includePayloads,
     boolean includeHeaders,
     boolean includeAuthClaims
   ) {
-    this.includePayloads = includePayloads;
-    this.includeHeaders = includeHeaders;
-    this.includeAuthClaims = includeAuthClaims;
+    this(
+      includePayloads,
+      includeHeaders,
+      includeAuthClaims,
+      PiiSanitizer.disabled()
+    );
   }
 
   /** Back-compat constructor used by tests that don't exercise auth claims. */
   public LogToLogRecordMapper(boolean includePayloads, boolean includeHeaders) {
-    this(includePayloads, includeHeaders, false);
+    this(includePayloads, includeHeaders, false, PiiSanitizer.disabled());
   }
 
   public OtelLogRecord map(Log log) {
@@ -72,8 +94,12 @@ public class LogToLogRecordMapper {
       ? req.getMethod().name()
       : "UNKNOWN";
     String uri = (req != null) ? req.getUri() : null;
-    String rawPath = OtelLabels.sanitizePath(uri);
-    String path = rawPath != null ? rawPath : "-";
+    // ONE sanitized URL for the whole record: the body below is promoted to Cloud Logging's
+    // `message` field, so it must not be built from a less-masked string than http.url.
+    // sanitizePath only templates numeric/UUID path segments; the query string needs the
+    // value layer.
+    String sanitizedUrl = sanitizer.url(OtelLabels.sanitizePath(uri));
+    String path = sanitizedUrl != null ? sanitizedUrl : "-";
     int status = (resp != null) ? resp.getStatus() : 0;
 
     String statusPart = (resp != null) ? " → " + status : "";
@@ -88,11 +114,11 @@ public class LogToLogRecordMapper {
       AttributeKey.stringKey("http.method"),
       req.getMethod().name()
     );
-    if (rawPath != null) {
+    if (sanitizedUrl != null) {
       // Promoted to httpRequest.requestUrl by GclLogRecordExporter so Cloud
       // Logging renders the full method+url+status chip line on Log-derived
       // records just like it does for Metrics-derived records.
-      b.put(AttributeKey.stringKey("http.url"), rawPath);
+      b.put(AttributeKey.stringKey("http.url"), sanitizedUrl);
     }
     if (status > 0) b.put(AttributeKey.longKey("http.status"), (long) status);
     if (req != null && req.getHeaders() != null) {
@@ -108,13 +134,13 @@ public class LogToLogRecordMapper {
       );
     }
     if (includeHeaders) {
-      String reqHeadersJson = OtelLabels.headersAsJson(
+      String reqHeadersJson = sanitizer.headersAsJson(
         req != null ? req.getHeaders() : null
       );
       if (reqHeadersJson != null) {
         b.put(AttributeKey.stringKey("http.request.headers"), reqHeadersJson);
       }
-      String respHeadersJson = OtelLabels.headersAsJson(
+      String respHeadersJson = sanitizer.headersAsJson(
         resp != null ? resp.getHeaders() : null
       );
       if (respHeadersJson != null) {
@@ -123,10 +149,16 @@ public class LogToLogRecordMapper {
     }
     if (includePayloads) {
       if (req != null && req.getBody() != null && !req.getBody().isEmpty()) {
-        b.put(AttributeKey.stringKey("http.request.body"), req.getBody());
+        b.put(
+          AttributeKey.stringKey("http.request.body"),
+          sanitizer.body(req.getBody())
+        );
       }
       if (resp != null && resp.getBody() != null && !resp.getBody().isEmpty()) {
-        b.put(AttributeKey.stringKey("http.response.body"), resp.getBody());
+        b.put(
+          AttributeKey.stringKey("http.response.body"),
+          sanitizer.body(resp.getBody())
+        );
       }
     }
     if (includeAuthClaims) {

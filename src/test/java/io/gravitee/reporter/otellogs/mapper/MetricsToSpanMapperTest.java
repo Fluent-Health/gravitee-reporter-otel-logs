@@ -24,6 +24,8 @@ import io.gravitee.gateway.api.http.HttpHeaders;
 import io.gravitee.reporter.api.common.Request;
 import io.gravitee.reporter.api.v4.log.Log;
 import io.gravitee.reporter.api.v4.metric.Metrics;
+import io.gravitee.reporter.otellogs.config.MaskingConfiguration;
+import io.gravitee.reporter.otellogs.sanitize.PiiSanitizer;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.sdk.resources.Resource;
@@ -122,6 +124,73 @@ class MetricsToSpanMapperTest {
     var span = exp.getFinishedSpanItems().get(0);
     assertThat(span.getStatus().getStatusCode()).isEqualTo(StatusCode.ERROR);
     assertThat(span.getStatus().getDescription()).contains("503");
+  }
+
+  @Test
+  void masks_url_bearing_span_attributes_when_masking_is_enabled() {
+    // Spans go to the TRACE sink, a different destination from the log records, so nothing
+    // downstream compensates. http.route used to carry the raw URI — not even path-templated —
+    // and gravitee.upstream.endpoint the raw endpoint.
+    InMemorySpanExporter exp = InMemorySpanExporter.create();
+    SdkTracerProvider provider = SdkTracerProvider.builder()
+      .addSpanProcessor(SimpleSpanProcessor.create(exp))
+      .build();
+    MaskingConfiguration masking = new MaskingConfiguration();
+    masking.setEnabled(true);
+    MetricsToSpanMapper mapper = new MetricsToSpanMapper(
+      provider.get("test"),
+      new TraceContextResolver("X-Request-ID"),
+      PiiSanitizer.from(masking)
+    );
+    Metrics m = mock(Metrics.class);
+    when(m.getStatus()).thenReturn(200);
+    when(m.getTimestamp()).thenReturn(1L);
+    when(m.getGatewayResponseTimeMs()).thenReturn(1L);
+    when(m.getUri()).thenReturn("/Patient/42?access_token=abc123");
+    when(m.getEndpoint()).thenReturn(
+      "https://emr.example.com/Patient/42?access_token=abc123"
+    );
+
+    mapper.map(m);
+    provider.forceFlush().join(2, java.util.concurrent.TimeUnit.SECONDS);
+
+    var attrs = exp.getFinishedSpanItems().get(0).getAttributes();
+    assertThat(attrs.get(AttributeKey.stringKey("http.route")))
+      .doesNotContain("abc123")
+      .contains("/Patient/{id}");
+    assertThat(
+      attrs.get(AttributeKey.stringKey("gravitee.upstream.endpoint"))
+    ).doesNotContain("abc123");
+  }
+
+  @Test
+  void templates_path_segments_even_with_masking_off() {
+    // The back-compat two-arg constructor resolves to a disabled sanitizer, but path
+    // templating is not masking — it is cardinality control and always applies.
+    InMemorySpanExporter exp = InMemorySpanExporter.create();
+    SdkTracerProvider provider = SdkTracerProvider.builder()
+      .addSpanProcessor(SimpleSpanProcessor.create(exp))
+      .build();
+    MetricsToSpanMapper mapper = new MetricsToSpanMapper(
+      provider.get("test"),
+      new TraceContextResolver("X-Request-ID")
+    );
+    Metrics m = mock(Metrics.class);
+    when(m.getStatus()).thenReturn(200);
+    when(m.getTimestamp()).thenReturn(1L);
+    when(m.getGatewayResponseTimeMs()).thenReturn(1L);
+    when(m.getUri()).thenReturn("/Patient/42");
+
+    mapper.map(m);
+    provider.forceFlush().join(2, java.util.concurrent.TimeUnit.SECONDS);
+
+    assertThat(
+      exp
+        .getFinishedSpanItems()
+        .get(0)
+        .getAttributes()
+        .get(AttributeKey.stringKey("http.route"))
+    ).isEqualTo("/Patient/{id}");
   }
 
   @Test
