@@ -17,6 +17,7 @@ package io.gravitee.reporter.otellogs.spring;
 
 import io.gravitee.reporter.otellogs.config.LegacyConfigWarning;
 import io.gravitee.reporter.otellogs.config.LogsConfiguration;
+import io.gravitee.reporter.otellogs.config.MaskingConfiguration;
 import io.gravitee.reporter.otellogs.config.OtelLogsReporterConfiguration;
 import io.gravitee.reporter.otellogs.config.ResourceConfiguration;
 import io.gravitee.reporter.otellogs.config.TracesConfiguration;
@@ -28,8 +29,15 @@ import org.springframework.core.env.Environment;
 public class OtelLogsReporterSpringConfiguration {
 
   @Bean
-  public LogsConfiguration logsConfiguration() {
-    return new LogsConfiguration();
+  public MaskingConfiguration maskingConfiguration() {
+    return new MaskingConfiguration();
+  }
+
+  @Bean
+  public LogsConfiguration logsConfiguration(MaskingConfiguration masking) {
+    LogsConfiguration logs = new LogsConfiguration();
+    logs.setMasking(masking);
+    return logs;
   }
 
   @Bean
