@@ -57,6 +57,8 @@ Add a `reporters.otellogs` block to `gravitee.yml`. Configuration is grouped int
 | `logs.reportMessageMetrics` | boolean | `true` | Emit records for `MessageMetrics` (async/event-driven) events. |
 | `logs.reportRequestSummary` | boolean | `true` | Emit a per-request "summary" record from `Metrics` events. Set `false` (with `reportRequestLogs: true`) to suppress it and rely solely on the detailed Log-derived record — one log per request instead of two. |
 | `logs.reportHeaders` | boolean | `false` | **Dev/stage only.** Attaches request/response headers as JSON-encoded `http.request.headers` / `http.response.headers` attributes on every log record that has them — summary (Metrics-derived) and detail (Log-derived) alike. **Keep `false` in production environments handling PII/PHI.** |
+| `logs.masking.enabled` | boolean | `false` | Redacts sensitive headers, bodies, query strings, upstream endpoints, error messages, and the log record message before export. **Replaces the Gravitee EE `data-logging-masking` policy** — enable it in any environment handling PII/PHI, not just where `reportHeaders` or `reportPayloads` is on: `http.url`, `upstream.endpoint`, `error.message` and the record message are emitted on every record regardless of those two flags. The reporter logs a warning at startup whenever logs are enabled and masking is off. |
+| `logs.masking.extraHeaders` | string | `""` | Comma-separated header names to mask in addition to the built-in list. Entries ending in `*` match by prefix (e.g. `x-tenant-*`). Additive only — you cannot remove a built-in. |
 | `logs.reportPayloads` | boolean | `false` | **Dev/stage only.** Attaches request/response bodies as `http.request.body` / `http.response.body` attributes on every log record that has them — summary and detail alike. Bodies must already be filtered upstream by the API logging config. **Keep `false` in production environments handling PII/PHI.** |
 | `logs.reportAuthClaims` | boolean | `false` | **Dev/stage only.** When the request carries `Authorization: Bearer <jwt>`, decodes the payload and attaches `auth.aud`, `auth.sub`, `auth.iss`, `auth.exp` to the detailed (`reportRequestLogs`-derived) log record. Signature is **not** validated — claims are surfaced for click-through to AM admin, not for authz decisions. Decode failures (JWE, malformed token, non-JSON payload) silently emit no fields. **Keep `false` in production environments handling PII/PHI.** |
 
@@ -389,7 +391,40 @@ Attributes by event type:
 
 **Log (request/response metadata, opt-in via `logs.reportRequestLogs: true`):** `api.name`, `http.method`, `http.status`, `log.request.headers_count`, `log.response.headers_count`.
 
-**Headers and bodies (`logs.reportHeaders` / `logs.reportPayloads`, both dev/stage only):** when these flags are set, **every** log record that has access to entrypoint headers and bodies — both Metrics-derived summary records and Log-derived detail records — carries `http.request.headers` / `http.response.headers` (JSON-encoded) and `http.request.body` / `http.response.body` (raw string) attributes.
+**Headers and bodies (`logs.reportHeaders` / `logs.reportPayloads`, both dev/stage only):** when these flags are set, **every** log record that has access to entrypoint headers and bodies — both Metrics-derived summary records and Log-derived detail records — carries `http.request.headers` / `http.response.headers` (JSON-encoded) and `http.request.body` / `http.response.body` (raw string) attributes. With `logs.masking.enabled: true` (default `false`), sensitive values within these attributes are redacted before export rather than emitted verbatim — see [Masking](#masking-logsmaskingenabled) below.
+
+### Masking (`logs.masking.enabled`)
+
+With masking on, every attribute that can carry sensitive content is redacted before export, using
+rules that live in code — configuration can add header names but never remove a built-in, and never
+supplies a regex:
+
+| Attribute | What is masked |
+| --- | --- |
+| `http.request.headers`, `http.response.headers` | Values of sensitive headers (`Authorization`, `Cookie`, `Set-Cookie`, `Proxy-Authorization`, `X-Gravitee-Api-Key`, `x-clevertap-*`, and more) are replaced with `[REDACTED]`. Remaining header values still go through the value-shape and FHIR passes, so a bearer token in an unlisted header is caught too. |
+| `http.request.body`, `http.response.body` | Emails, `Bearer`/`Basic` credentials, UUIDs, dates, Indian phone numbers, ABHA ids, credential key/value pairs, and FHIR R4 PII shapes (HumanName, Address, ContactPoint, Annotation.text, Reference.display, ContactDetail.name). Bodies over 64 KB are dropped entirely rather than shipped partially sanitized. |
+| `http.url` | Query-string values. Note this attribute is **not** gated by `reportHeaders` / `reportPayloads`, so masking is the only thing protecting it. |
+| `upstream.endpoint` | Same pass as `http.url`. The upstream URL carries the same query string as the inbound one, so leaving it raw leaked the identical credentials. Also ungated. |
+| the log record body (Cloud Logging's `message` field) | Built from the same sanitized path as `http.url`, so the `METHOD /path → status` summary line cannot reintroduce a query-string credential. Also ungated. |
+| `error.message` | Same passes as bodies, under a more generous 256 KB cap. Also ungated — gateway policies can template request data into their error text, and on the EMR token-exchange failure path this carries the raw Gravitee AM response body. |
+| span attributes `http.route`, `gravitee.upstream.endpoint` (`traces.enabled`) | Same pass as `http.url`. Traces are a separate export path, so masking has to reach it too. |
+
+Credential coverage is not limited to the `Authorization` / `Cookie` header names: within bodies and
+URLs the value layer also redacts credential **key names** wherever they appear — `subject_token`,
+`refresh_token`, `client_secret`, `api_key`/`apiKey`, `password`, `otp`, `pin` and friends — which is
+what protects the EMR token-exchange request body and a `?access_token=…` query string.
+
+Masking is deliberately shape-aware rather than keyword-aware, so it does not destroy diagnostic or
+clinical text for no compliance gain: `Basic Metabolic Panel`, `Invalid token: session expired` and
+`Invalid pin: must be 6 digits` all survive intact, while `Basic Y2xpZW50OnNlY3JldA==` and
+`otp=123456` do not.
+
+`auth.*` claims are deliberately **not** masked: they are decoded specifically so a log row can be
+traced back to a subject in your identity provider, which is the feature's entire purpose. Keep
+`reportAuthClaims: false` in any environment where that is not wanted.
+
+Rules live in code rather than configuration, so `extraHeaders` can only ever *add* to them —
+weakening masking requires a code change and review, not a config edit.
 
 **Auth claims (`logs.reportAuthClaims`, dev/stage only, detailed records only):** when the flag is on and the request carries `Authorization: Bearer <jwt>`, the JWT payload is decoded and these claims are attached to the **detailed** (Log-derived) record — not the summary record:
 
